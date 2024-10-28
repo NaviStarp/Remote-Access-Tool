@@ -1,7 +1,7 @@
 import curses
 import argparse
 
-connected_clients = [f"Conexion {i + 1}" for i in range(20)]  # Generar 100 conexiones simuladas
+connected_clients = [f"Conexion {i + 1}" for i in range(100)]  # Generar 100 conexiones simuladas
 
 
 def create_executable(stdscr):
@@ -17,8 +17,14 @@ def view_connections(stdscr):
     current_row = 0  # Índice de la fila actualmente resaltada
     current_col = 0  # Índice de la columna actualmente resaltada
     items_per_col = 10  # Número de elementos para mostrar por columna
-    num_columns = 3  # Número de columnas para mostrar
+    num_columns = 1  # Número de columnas para mostrar
     total_connections = len(connected_clients)
+    curses.curs_set(0)  # Ocultar el cursor
+    curses.cbreak()  # Habilitar el modo de interrupción de línea
+    curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)  # Define un par de colores con un ID (en este caso, 1).
+    curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)  # Define un par de colores con un ID (en este caso, 1).
+    stdscr.bkgd(' ', curses.color_pair(2))  # Establece un fondo de color para la ventana con el par de color dado.
+
 
     page_size = items_per_col * num_columns  # Total de elementos por página
     current_page = 0  # Índice de la página actual
@@ -30,7 +36,12 @@ def view_connections(stdscr):
 
         start_index = current_page * page_size
         min(start_index + page_size, total_connections)
-
+        if len(connected_clients) == 0:
+            stdscr.addstr(stdscr.getmaxyx()[0] // 2, stdscr.getmaxyx()[1] // 2 - len("No hay conexiones activas") // 2,
+                          "No hay conexiones activas")
+            stdscr.refresh()
+            stdscr.getch()  # Esperar a que el usuario presione una tecla
+            break
         for row in range(items_per_col):
             for col in range(num_columns):
                 actual_index = start_index + row + (col * items_per_col)
@@ -42,11 +53,13 @@ def view_connections(stdscr):
 
                     # Resaltar el elemento seleccionado
                     if row == current_row and col == current_col:
-                        stdscr.attron(curses.color_pair(1))  # Color de resaltado
+
+                        stdscr.attron(curses.color_pair(1))
+
                         stdscr.addstr(y, x, display_text)
                         stdscr.attroff(curses.color_pair(1))  # Apagar el resaltado
                     else:
-                        stdscr.addstr(y, x, display_text)
+                        stdscr.addstr(y, x, display_text )
 
         # Mostrar información de paginación
         total_pages = (total_connections + page_size - 1) // page_size  # Calcular total de páginas
@@ -215,6 +228,8 @@ def main_menu(stdscr):
                 view_connections(stdscr)
             elif menu[current_row] == "SALIR":
                 break
+        elif key == ord("q"):
+            break
 
         stdscr.refresh()
 

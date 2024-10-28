@@ -17,7 +17,7 @@
 
 1. **Clona el repositorio**:
    ```bash
-   git clone https://github.com/tuusuario/remote-access-tool.git
+   git clone https://github.com/NaviStarp/remote-access-tool.git
    cd remote-access-tool
     ```
 2. instala las dependencias:
@@ -29,8 +29,10 @@
     python main.py
     ```
 ## Controles 
-Flechas Arriba/Abajo: Moverse entre las conexiones
+Flechas Arriba/Abajo/Derecha/Izquierda : Moverse entre las conexiones
+
 Enter: Conectar a un cliente
+
 Q: Salir de la aplicación
 
 # Licecia 
