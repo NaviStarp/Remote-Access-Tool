@@ -1,35 +1,38 @@
 import curses
 import argparse
+from socket import socket
+import threading
 
-connected_clients = [f"Conexion {i + 1}" for i in range(100)]  # Generar 100 conexiones simuladas
+from client.client import Client  # Asegúrate de importar correctamente la clase Client
+from server import Server
 
+def run_server(server):
+    server.start()  # Iniciar el servidor en segundo plano
+    print("[+] Servidor escuchando...")
 
 def create_executable(stdscr):
     stdscr.clear()
-    stdscr.addstr(0, 0, "Creando ejecutable...") # Mensaje de creación de ejecutable
+    stdscr.addstr(0, 0, "Creando ejecutable...")  # Mensaje de creación de ejecutable
     stdscr.refresh()
     curses.napms(1000)
     stdscr.addstr(1, 0, "Ejecutable creado con éxito. (mentira)")
     stdscr.refresh()
     stdscr.getch()
 
-def view_connections(stdscr):
+def view_connections(stdscr,server):
     current_row = 0  # Índice de la fila actualmente resaltada
     current_col = 0  # Índice de la columna actualmente resaltada
     items_per_col = 10  # Número de elementos para mostrar por columna
     num_columns = 1  # Número de columnas para mostrar
-    total_connections = len(connected_clients)
-    curses.curs_set(0)  # Ocultar el cursor
-    curses.cbreak()  # Habilitar el modo de interrupción de línea
-    curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)  # Define un par de colores con un ID (en este caso, 1).
-    curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)  # Define un par de colores con un ID (en este caso, 1).
-    stdscr.bkgd(' ', curses.color_pair(2))  # Establece un fondo de color para la ventana con el par de color dado.
+
 
 
     page_size = items_per_col * num_columns  # Total de elementos por página
     current_page = 0  # Índice de la página actual
 
     while True:
+        connected_clients = server.connected_clients # Obtener la lista de conexiones activas
+        total_connections = len(connected_clients)
         stdscr.clear()
         stdscr.addstr(0, stdscr.getmaxyx()[1] // 2 - len("Conexiones activas:") // 2, "Conexiones activas:",
                       curses.A_BOLD)
@@ -122,8 +125,17 @@ def view_connections(stdscr):
             # Conectarse al cliente seleccionado
             selected_client_index = start_index + current_row + (current_col * items_per_col)
             if selected_client_index < total_connections:
-                selected_client = connected_clients[selected_client_index]
-                client_menu(stdscr)  # Mostrar el menú del cliente
+                selected_client: Client = connected_clients[selected_client_index]
+                stdscr.addstr(stdscr.getmaxyx()[0] - 1, 0, "Conectando al cliente...")  # Mensaje de depuración
+                stdscr.refresh()
+                if isinstance(selected_client, Client):  # Verifica si es una instancia de Client
+                    if not selected_client.connect("127.0.0.1","8080"):  # Asegúrate de que connect() se ejecute correctamente
+                        stdscr.addstr(stdscr.getmaxyx()[0] - 1, 0, "Error al conectar al cliente.")
+                        stdscr.refresh()
+                        stdscr.getch()
+                        continue  # Vuelve al menú de conexiones
+
+                    selected_client.display_commands(stdscr)  # Pasar el cliente seleccionado al menú del cliente
         elif key == ord("q"):
             break
 
@@ -137,11 +149,16 @@ def view_connections(stdscr):
             current_col = 0
 
 
-
-
 def menu_init(stdscr, logo, menu, current_row):
     stdscr.clear()
     height, width = stdscr.getmaxyx()
+
+    # Verifica si hay suficiente espacio para el logo
+    if height < len(logo) + 5:  # Asegúrate de que haya suficiente espacio para el logo y el menú
+        stdscr.addstr(0, 0, "La ventana es demasiado pequeña para mostrar el logo.")
+        stdscr.refresh()
+        stdscr.getch()  # Esperar a que el usuario presione una tecla
+        return
 
     # Mostrar el logo centrado en la parte superior
     for i, line in enumerate(logo):
@@ -160,16 +177,15 @@ def menu_init(stdscr, logo, menu, current_row):
             stdscr.addstr(y, x, row)
 
 
-def client_menu(stdscr):
-    # Creacion logo y opciones de menú
-    logo = [
-        "Menu cliente ".capitalize(),
-        "-------------------------------------"
-    ]
-    menu = ["Ejemplo 1", "Ejemplo 2", "Ejemplo 3", "SALIR"]
+def client_menu(stdscr, client: Client):
+    if not client.connect("127.0.0.1","8080"):
+        return
+
+    name = client.commands["hostname"]()  # Obtiene el nombre del cliente
+    logo = [f"Menu cliente: {name}".capitalize(), "-------------------------------------"]
+    menu = list(client.commands.keys())  # Lista de comandos
     current_row = 0
 
-    # Bucle principal del menú
     while True:
         menu_init(stdscr, logo, menu, current_row)
 
@@ -180,23 +196,32 @@ def client_menu(stdscr):
             current_row -= 1
         elif key == curses.KEY_DOWN and current_row < len(menu) - 1:
             current_row += 1
-        elif key == curses.KEY_UP and current_row == 0:
-            current_row = len(menu) - 1
-        elif key == curses.KEY_DOWN and current_row == len(menu) - 1:
-            current_row = 0
-        elif key == curses.KEY_ENTER or key in [10, 13]:
+        elif key in (curses.KEY_ENTER, 10, 13):
             # Ejecuta la opción seleccionada
-            if menu[current_row] == "Ejemplo 1":
-                print("Ejemplo 1")
-            elif menu[current_row] == "Ejemplo 2":
-                print("Ejemplo 2")
-            elif menu[current_row] == "SALIR":
-                break
+            selected_command = menu[current_row]
+            command = f"{selected_command}"  # Llama al comando directamente
 
+            # Manda el comando al servidor
+            client.client_socket.send(command.encode('utf-8'))
+
+            # Espera la respuesta del servidor
+            response = client.client_socket.recv(4096).decode('utf-8')
+
+            # Muestra la respuesta en la pantalla
+            stdscr.clear()  # Limpia la pantalla
+            stdscr.addstr(0, 0, f"Comando ejecutado: {selected_command}")
+            stdscr.addstr(1, 0, f"Respuesta del cliente: {response}")
+            stdscr.addstr(2, 0, "Presione cualquier tecla para volver al menú...")
+            stdscr.refresh()  # Refresca la pantalla
+
+            stdscr.getch()  # Espera a que el usuario presione una tecla
+
+            # Restablece el menú después de mostrar la respuesta
+            current_row = 0  # Restablece la fila resaltada
         stdscr.refresh()
 
 
-def main_menu(stdscr):
+def main_menu(stdscr, server):
     # Configuración del logo y opciones de menú
     logo = [
         " T I T U L O ",
@@ -216,23 +241,17 @@ def main_menu(stdscr):
             current_row -= 1
         elif key == curses.KEY_DOWN and current_row < len(menu) - 1:
             current_row += 1
-        elif key == curses.KEY_UP and current_row == 0:
-            current_row = len(menu) - 1
-        elif key == curses.KEY_DOWN and current_row == len(menu) - 1:
-            current_row = 0
-        elif key == curses.KEY_ENTER or key in [10, 13]:
+        elif key in (curses.KEY_ENTER, 10, 13):
             # Ejecuta la opción seleccionada
             if menu[current_row] == "CREAR EJECUTABLE":
                 create_executable(stdscr)
             elif menu[current_row] == "VER CONEXIONES":
-                view_connections(stdscr)
+                view_connections(stdscr, server)
             elif menu[current_row] == "SALIR":
                 break
         elif key == ord("q"):
-            break
-
+            exit(0)
         stdscr.refresh()
-
 
 def main(stdscr):
     parser = argparse.ArgumentParser(description="Servidor Simulado")
@@ -247,18 +266,20 @@ def main(stdscr):
     stdscr.addstr(0, 0, "Iniciando el servidor en segundo plano...")
     stdscr.refresh()
 
-    # Simulacion de crear servidor
-    stdscr.addstr(1, 0, "Servidor iniciado.")
-    stdscr.refresh()
+    server = Server()  # Crear una instancia del servidor
+    server_thread = threading.Thread(target=run_server, args=(server,))
+
+    server_thread.daemon = True
+    server_thread.start()
+    server_thread.join(1)  # Esperar 1 segundo para que el servidor se inicie
+
     if args.create:
         create_executable(stdscr)
     elif args.view:
-        view_connections(stdscr)
+        view_connections(stdscr, server)
     else:
         # Muestra el menú principal
-        main_menu(stdscr)
-
-
+        main_menu(stdscr, server)
 
 if __name__ == "__main__":
     curses.wrapper(main)
