@@ -1,5 +1,6 @@
 import curses
 import argparse
+import socket
 import threading
 from typing import Union
 from client import Client
@@ -20,52 +21,59 @@ def create_executable(stdscr):
     stdscr.getch()
 
 
-# Funciones auxiliares de navegación y display
-def show_message(stdscr, message, y, x):
-    stdscr.addstr(y, x, message)
-    stdscr.refresh()
-
-
 def show_connections(stdscr, server):
-    connected_clients = [Client(f"Cliente {i}", f"127.0.0.{i}") for i in range(100)]
+    connected_clients =  [Client("127.0.0.1", server.port) for _ in range(10)]
     total_connections = len(connected_clients)
     current_row = 0
-    page_size = 10
+    current_column = 0
+    page_size = 9  # Mostramos 3 filas por columna (3 columnas x 3 filas)
     current_page = 0
-
-    total_pages = (total_connections + page_size - 1) // page_size  # Cálculo de total de páginas
+    total_pages = (total_connections + page_size - 1) // page_size
 
     while True:
         stdscr.clear()
-        show_message(stdscr, "Conexiones activas:", 0, stdscr.getmaxyx()[1] // 2 - len("Conexiones activas:") // 2)
 
-        start_index = current_page * page_size
+        # Centrando el título
+        title = "Conexiones activas:"
+        title_x = stdscr.getmaxyx()[1] // 2 - len(title) // 2
+        show_message(stdscr, title, 1, title_x)
 
         # Mostrar clientes en la página actual
+        start_index = current_page * page_size
         for idx in range(page_size):
             actual_index = start_index + idx
             if actual_index < total_connections:
                 name = connected_clients[actual_index].execute_command('hostname')
-                display_text = f"{actual_index + 1}. {name}"
-                y, x = get_display_position(stdscr, idx)
-                show_client_row(stdscr, y, stdscr.getmaxyx()[1] // 2 - len("Conexiones activas:") // 2, display_text, current_row == idx)
+                ip = connected_clients[actual_index].client_socket.getsockname()[0] if isinstance(
+                    connected_clients[actual_index].client_socket, socket.socket) else connected_clients[actual_index].client_socket
 
-        # Mostrar información de paginación
+                # Calcular posición para cada cliente en filas y columnas
+                row = idx // 3  # Filas por cada página
+                column = idx % 3  # Columnas por cada página
+                y, x = get_display_position(stdscr, row, column)
+                display_text = f"{actual_index + 1}. {name} ({ip})"
+                show_client_row(stdscr, y, x, display_text, current_row == row and current_column == column)
+            else:
+                row = idx // 3  # Filas por cada página
+                column = idx % 3  # Columnas por cada página
+                y, x = get_display_position(stdscr, row, column)
+                display_text = "Vacio"
+                show_client_row(stdscr, y, x, display_text, current_row == row and current_column == column)
+        # Información de paginación centrada
         pagination_info = f"Página {current_page + 1} de {total_pages}"
-        show_message(stdscr, pagination_info, stdscr.getmaxyx()[0] - 2,0 )
+        pagination_x = stdscr.getmaxyx()[1] // 2 - len(pagination_info) // 2
+        show_message(stdscr, pagination_info, stdscr.getmaxyx()[0] - 2, pagination_x)
 
         stdscr.refresh()
 
-        # Navegación en la lista de clientes
-        result = navigate_client_list(stdscr, connected_clients, page_size, current_row, current_page, total_pages)
-
+        # Navegación
+        result = navigate_client_list(stdscr, connected_clients, page_size, current_row, current_column, current_page, total_pages)
         if result == "quit":
-            break  # Salir del bucle para volver al menú principal
+            break
         elif isinstance(result, tuple):
-            current_row, current_page = result
+            current_row, current_column, current_page = result
         else:
-            selected_client: Client = result  # Cliente seleccionado por el usuario
-
+            selected_client: Client = result
             if selected_client and isinstance(selected_client, Client):
                 stdscr.clear()
                 show_message(stdscr, f"Cliente seleccionado: {selected_client}", 0, 0)
@@ -74,10 +82,22 @@ def show_connections(stdscr, server):
                 stdscr.getch()
 
 
-def get_display_position(stdscr, row):
-    y = (stdscr.getmaxyx()[0] // 2 - 5 + row)
-    x = stdscr.getmaxyx()[1] // 2 - 20
+def get_display_position(stdscr, row, column):
+    """Calcula la posición de cada cliente en una fila y columna específica, con tres columnas centradas."""
+    y = stdscr.getmaxyx()[0] // 2 - 5 + row * 2  # Centrado verticalmente
+    x_positions = [
+        stdscr.getmaxyx()[1] // 2 - 30,  # Columna izquierda
+        stdscr.getmaxyx()[1] // 2 - 5,   # Columna central
+        stdscr.getmaxyx()[1] // 2 + 20   # Columna derecha
+    ]
+    x = x_positions[column]
     return y, x
+
+
+
+def show_message(stdscr, message, y, x):
+    stdscr.addstr(y, x, message)
+    stdscr.refresh()
 
 
 def show_client_row(stdscr, y, x, display_text, highlighted):
@@ -89,52 +109,58 @@ def show_client_row(stdscr, y, x, display_text, highlighted):
         stdscr.addstr(y, x, display_text)
 
 
-def navigate_client_list(stdscr, connected_clients, page_size, current_row, current_page, total_pages) -> Union[
-    tuple, str, Client]:
+
+
+
+def navigate_client_list(stdscr, connected_clients, page_size, current_row, current_column, current_page, total_pages):
     total_connections = len(connected_clients)
     key = stdscr.getch()
 
     if key == curses.KEY_DOWN:
-        if current_row < page_size - 1 and (current_page * page_size + current_row + 1) < total_connections:
+        if current_row < 2 and (current_page * page_size + (current_row + 1) * 3 + current_column) < total_connections:
             current_row += 1
-        elif (current_page + 1) * page_size < total_connections:
+        elif current_page < total_pages - 1:
             current_page += 1
-            current_row = 0  # Resetea la fila al inicio de la nueva página
+            current_row = 0
 
     elif key == curses.KEY_UP:
         if current_row > 0:
             current_row -= 1
         elif current_page > 0:
             current_page -= 1
-            current_row = page_size - 1  # Resetea a la última fila de la página anterior
+            current_row = 2
 
-    elif key == curses.KEY_RIGHT:  # Navegación a la derecha
-        if current_page < total_pages - 1:
-            current_page += 1
-            current_row = 0  # Resetea la fila al inicio de la nueva página
+    elif key == curses.KEY_RIGHT:
+        if current_column < 2 and (current_page * page_size + current_row * 3 + (current_column + 1)) < total_connections:
+            current_column += 1
+        elif current_page < total_pages - 1:
+                current_page += 1
+                current_row, current_column = 0, 0
 
-    elif key == curses.KEY_LEFT:  # Navegación a la izquierda
-        if current_page > 0:
+    elif key == curses.KEY_LEFT:
+        if current_column > 0:
+            current_column -= 1
+        elif current_page > 0:
             current_page -= 1
-            current_row = 0  # Resetea la fila al inicio de la nueva página
+            current_row, current_column = 2, 2
 
     elif key in [10, 13]:  # Enter key
-        selected_client = select_client(connected_clients, current_row, current_page, page_size)
+        selected_client = select_client(connected_clients, current_row, current_column, current_page, page_size)
         if selected_client:
             return selected_client
 
     elif key == ord("q"):
         return "quit"
 
-    return current_row, current_page
+    return current_row, current_column, current_page
 
 
-def select_client(connected_clients, current_row, current_page, page_size) -> Client:
-    selected_index = current_page * page_size + current_row
+def select_client(connected_clients, current_row, current_column, current_page, page_size):
+    """Selecciona un cliente según la fila, columna y página actuales."""
+    selected_index = current_page * page_size + current_row * 3 + current_column
     if selected_index < len(connected_clients):
         return connected_clients[selected_index]
     return None
-
 
 # Funciones para inicializar y mostrar los menús
 def show_logo(stdscr, logo):
