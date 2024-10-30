@@ -14,11 +14,136 @@ def run_server(server):
 
 
 def create_executable(stdscr):
+    curses.curs_set(1)  # Mostrar el cursor
     stdscr.clear()
-    show_message(stdscr, "Creando ejecutable...", 0)
-    curses.napms(1000)
-    show_message(stdscr, "Ejecutable creado con éxito. (mentira)", 1)
-    stdscr.getch()
+
+    # Variables para las selecciones
+    persistence_option = False
+    platforms = ["Windows", "Linux", "macOS"]
+    current_platform = 0
+    host = ""
+    port = ""
+    current_option = 0  # Opción actual seleccionada
+
+    # Colores adicionales para mejorar la interfaz
+    curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)  # Para opciones activas
+    curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLUE)   # Para el campo seleccionado
+    curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK) # Para instrucciones
+
+    while True:
+        stdscr.clear()
+        height, width = stdscr.getmaxyx()
+        start_y = height // 2 - 8  # Ajustado para mejor distribución
+        start_x = width // 2 - 25  # Centro horizontal
+
+        # Título y marco
+        stdscr.addstr(start_y, start_x, "╔══════════════ Crear Ejecutable ══════════════╗", curses.A_BOLD)
+        stdscr.addstr(start_y + 14, start_x, "╚════════════════════════════════════════════╝", curses.A_BOLD)
+
+        # Instrucciones de navegación
+        instructions = "↑↓: Navegar | Enter: Seleccionar | Esc: Salir"
+        stdscr.addstr(start_y - 2, width // 2 - len(instructions) // 2, instructions, curses.color_pair(4))
+
+        # 1. Opción de persistencia
+        field_text = "Persistencia:"
+        stdscr.addstr(start_y + 2, start_x + 2, field_text)
+        if current_option == 0:
+            stdscr.addstr(start_y + 2, start_x + len(field_text) + 3, "Sí" if persistence_option else "No",
+                         curses.color_pair(3) | curses.A_BOLD)
+        else:
+            stdscr.addstr(start_y + 2, start_x + len(field_text) + 3, "Sí" if persistence_option else "No",
+                         curses.color_pair(2))
+
+        # 2. Selector de plataforma
+        stdscr.addstr(start_y + 4, start_x + 2, "Plataforma:")
+        platform_x = start_x + 13
+        for idx, platform in enumerate(platforms):
+            if current_option == 1 and idx == current_platform:
+                stdscr.addstr(start_y + 4, platform_x + idx * 12, f"[{platform}]",
+                            curses.color_pair(3) | curses.A_BOLD)
+            else:
+                stdscr.addstr(start_y + 4, platform_x + idx * 12, f" {platform} ",
+                            curses.color_pair(2) if idx == current_platform else curses.A_NORMAL)
+
+        # 3. Campo de host
+        field_text = "Host:"
+        stdscr.addstr(start_y + 6, start_x + 2, field_text)
+        if current_option == 2:
+            stdscr.addstr(start_y + 6, start_x + len(field_text) + 3, f"[{host}]",
+                         curses.color_pair(3) | curses.A_BOLD)
+        else:
+            stdscr.addstr(start_y + 6, start_x + len(field_text) + 3, host,
+                         curses.color_pair(2))
+
+        # 4. Campo de puerto
+        field_text = "Puerto:"
+        stdscr.addstr(start_y + 8, start_x + 2, field_text)
+        if current_option == 3:
+            stdscr.addstr(start_y + 8, start_x + len(field_text) + 3, f"[{port}]",
+                         curses.color_pair(3) | curses.A_BOLD)
+        else:
+            stdscr.addstr(start_y + 8, start_x + len(field_text) + 3, port,
+                         curses.color_pair(2))
+
+        # Botón de confirmación
+        button_text = "[ Confirmar ]"
+        if current_option == 4:
+            stdscr.addstr(start_y + 11, width // 2 - len(button_text) // 2, button_text,
+                         curses.color_pair(3) | curses.A_BOLD)
+        else:
+            stdscr.addstr(start_y + 11, width // 2 - len(button_text) // 2, button_text,
+                         curses.color_pair(2))
+
+        # Campo activo actual
+        active_field = ["Persistencia", "Plataforma", "Host", "Puerto", "Confirmar"][current_option]
+        status_text = f"Campo activo: {active_field}"
+        stdscr.addstr(height - 2, width // 2 - len(status_text) // 2, status_text, curses.color_pair(4))
+
+        stdscr.refresh()
+
+        key = stdscr.getch()
+
+        if key == 27:  # Esc
+            break
+        elif key == curses.KEY_DOWN:
+            current_option = (current_option + 1) % 5
+        elif key == curses.KEY_UP:
+            current_option = (current_option - 1) % 5
+        elif key == curses.KEY_RIGHT:
+            if current_option == 1:  # Plataforma
+                current_platform = (current_platform + 1) % len(platforms)
+            elif current_option == 0:  # Persistencia
+                persistence_option = not persistence_option
+        elif key == curses.KEY_LEFT:
+            if current_option == 1:  # Plataforma
+                current_platform = (current_platform - 1) % len(platforms)
+            elif current_option == 0:  # Persistencia
+                persistence_option = not persistence_option
+        elif key in [10, 13]:  # Enter
+            if current_option == 4:  # Botón confirmar
+                if host and port:  # Validación básica
+                    stdscr.addstr(start_y + 12, start_x + 2, "✓ Ejecutable creado con éxito!",
+                                curses.color_pair(2) | curses.A_BOLD)
+                    stdscr.refresh()
+                    curses.napms(1500)
+                    break
+                else:
+                    error_msg = "⚠ Error: Host y Puerto son requeridos"
+                    stdscr.addstr(start_y + 12, start_x + 2, error_msg,
+                                curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.refresh()
+                    curses.napms(1500)
+        elif current_option == 2 and (32 <= key <= 126):  # Host
+            host += chr(key)
+        elif current_option == 3 and len(port) < 5 and 48 <= key <= 57:  # Puerto
+            port += chr(key)
+        elif key in [curses.KEY_BACKSPACE, 127, 8]:  # Backspace
+            if current_option == 2:
+                host = host[:-1]
+            elif current_option == 3:
+                port = port[:-1]
+
+    curses.curs_set(0)
 
 
 def show_connections(stdscr, server):
