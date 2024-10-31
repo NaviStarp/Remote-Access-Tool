@@ -1,65 +1,344 @@
 import socket
 import subprocess
+import platform
+import os
+import psutil
+import datetime
+import sys
+from typing import Optional, Tuple, List, Dict
 
-def get_hostname():
-    """Obtiene el nombre de host de la máquina cliente."""
-    try:
-        return socket.gethostname().split('.')[0]
-    except Exception as e:
-        return f"Error: {e}"
 
-def get_ip():
-    """Obtiene la dirección IP de la máquina cliente."""
-    try:
-        return socket.gethostbyname(socket.gethostname())
-    except Exception as e:
-        return f"Error: {e}"
+def execute_command(command: str, timeout: int = 30) -> Tuple[bool, str]:
+    """
+    Ejecuta un comando de sistema de forma segura.
 
-def get_os():
-    """Obtiene el sistema operativo de la máquina cliente."""
-    try:
-        return subprocess.check_output("ver", shell=True, stderr=subprocess.STDOUT).decode('utf-8')
-    except Exception as e:
-        return f"Error: {e}"
+    Args:
+        command: Comando a ejecutar
+        timeout: Tiempo máximo de espera en segundos
 
-def get_users():
-    """Obtiene los usuarios activos en la máquina cliente."""
+    Returns:
+        Tuple[bool, str]: (éxito, resultado/error)
+    """
     try:
-        return subprocess.check_output("net user", shell=True, stderr=subprocess.STDOUT).decode('utf-8')
+        result = subprocess.run(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            encoding='utf-8',
+            errors='replace'
+        )
+        if result.returncode == 0:
+            return True, result.stdout
+        return False, f"Error (código {result.returncode}): {result.stderr}"
+    except subprocess.TimeoutExpired:
+        return False, f"Error: El comando excedió el tiempo límite de {timeout} segundos"
     except Exception as e:
-        return f"Error: {e}"
+        return False, f"Error: {str(e)}"
 
-def get_processes():
-    """Obtiene los procesos en ejecución en la máquina cliente."""
-    try:
-        return subprocess.check_output("tasklist", shell=True, stderr=subprocess.STDOUT).decode('utf-8')
-    except Exception as e:
-        return f"Error: {e}"
 
-def get_drives():
-    """Obtiene los discos duros de la máquina cliente."""
+def get_hostname() -> str:
+    """Obtiene información detallada del host."""
     try:
-        return subprocess.check_output("fsutil fsinfo drives", shell=True, stderr=subprocess.STDOUT).decode('utf-8')
+        fqdn = socket.getfqdn()
+        hostname = socket.gethostname()
+        return f"Hostname: {hostname}\nFQDN: {fqdn}"
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error obteniendo hostname: {e}"
 
-def get_files():
-    """Obtiene los archivos en la carpeta actual de la máquina cliente."""
-    try:
-        return subprocess.check_output("dir", shell=True, stderr=subprocess.STDOUT).decode('utf-8')
-    except Exception as e:
-        return f"Error: {e}"
 
-def get_network():
-    """Obtiene la configuración de red de la máquina cliente."""
+def get_ip() -> str:
+    """Obtiene las direcciones IP de todas las interfaces."""
     try:
-        return subprocess.check_output("ipconfig /all", shell=True, stderr=subprocess.STDOUT).decode('utf-8')
-    except Exception as e:
-        return f"Error: {e}"
+        hostname = socket.gethostname()
+        ips = []
 
-def get_services():
-    """Obtiene los servicios de la máquina cliente."""
-    try:
-        return subprocess.check_output("net start", shell=True, stderr=subprocess.STDOUT).decode('utf-8')
+        # Obtener IP local
+        local_ip = socket.gethostbyname(hostname)
+        ips.append(f"IP Local: {local_ip}")
+
+        # Intentar obtener IP pública
+        try:
+            import urllib.request
+            external_ip = urllib.request.urlopen('https://api.ipify.org').read().decode('utf8')
+            ips.append(f"IP Externa: {external_ip}")
+        except:
+            ips.append("IP Externa: No disponible")
+
+        return "\n".join(ips)
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error obteniendo IPs: {e}"
+
+
+def get_os() -> str:
+    """Obtiene información detallada del sistema operativo."""
+    try:
+        os_info = [
+            f"Sistema: {platform.system()}",
+            f"Versión: {platform.version()}",
+            f"Plataforma: {platform.platform()}",
+            f"Arquitectura: {platform.machine()}",
+            f"Procesador: {platform.processor()}",
+            f"Python: {sys.version}"
+        ]
+        return "\n".join(os_info)
+    except Exception as e:
+        return f"Error obteniendo información del SO: {e}"
+
+
+def get_users() -> str:
+    """Obtiene información detallada de usuarios."""
+    try:
+        if platform.system() == "Windows":
+            success, output = execute_command("net user")
+            if success:
+                return output
+        else:
+            success, output = execute_command("who")
+            if success:
+                return output
+        return "No se pudo obtener información de usuarios"
+    except Exception as e:
+        return f"Error obteniendo usuarios: {e}"
+
+
+def get_processes() -> str:
+    """Obtiene información detallada de procesos."""
+    try:
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'username', 'memory_percent']):
+            try:
+                info = proc.info
+                processes.append(f"PID: {info['pid']:<6} Usuario: {info['username']:<15} "
+                                 f"Memoria: {info['memory_percent']:.1f}% Nombre: {info['name']}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return "\n".join(processes)
+    except Exception as e:
+        return f"Error obteniendo procesos: {e}"
+
+
+def get_drives() -> str:
+    """Obtiene información detallada de unidades de disco."""
+    try:
+        if platform.system() == "Windows":
+            drives_info = []
+            for part in psutil.disk_partitions(all=False):
+                if os.path.exists(part.mountpoint):
+                    usage = psutil.disk_usage(part.mountpoint)
+                    drives_info.append(
+                        f"Unidad: {part.device}\n"
+                        f"  Punto de montaje: {part.mountpoint}\n"
+                        f"  Sistema de archivos: {part.fstype}\n"
+                        f"  Total: {usage.total / (1024 ** 3):.1f} GB\n"
+                        f"  Usado: {usage.used / (1024 ** 3):.1f} GB\n"
+                        f"  Libre: {usage.free / (1024 ** 3):.1f} GB\n"
+                        f"  Porcentaje usado: {usage.percent}%\n"
+                    )
+            return "\n".join(drives_info)
+        else:
+            success, output = execute_command("df -h")
+            return output if success else "No se pudo obtener información de discos"
+    except Exception as e:
+        return f"Error obteniendo información de discos: {e}"
+
+
+def get_files(path: Optional[str] = None) -> str:
+    """
+    Obtiene listado detallado de archivos.
+
+    Args:
+        path: Ruta a listar. Si es None, usa el directorio actual.
+    """
+    try:
+        path = path or os.getcwd()
+        files_info = []
+
+        files_info.append(f"Contenido de: {path}\n")
+        total_size = 0
+
+        for entry in os.scandir(path):
+            try:
+                stats = entry.stat()
+                size = stats.st_size
+                total_size += size
+                modified = datetime.datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+
+                if entry.is_file():
+                    type_char = 'F'
+                elif entry.is_dir():
+                    type_char = 'D'
+                else:
+                    type_char = '?'
+
+                files_info.append(
+                    f"{type_char} {modified} {size:>10,} bytes  {entry.name}"
+                )
+            except Exception:
+                continue
+
+        files_info.append(f"\nTotal: {total_size:,} bytes")
+        return "\n".join(files_info)
+    except Exception as e:
+        return f"Error listando archivos: {e}"
+
+
+def get_network() -> str:
+    """Obtiene información detallada de red."""
+    try:
+        network_info = []
+
+        # Interfaces de red
+        network_info.append("Interfaces de red:")
+        for interface, addrs in psutil.net_if_addrs().items():
+            network_info.append(f"\n{interface}:")
+            for addr in addrs:
+                if addr.family == socket.AF_INET:
+                    network_info.append(f"  IPv4: {addr.address}")
+                elif addr.family == socket.AF_INET6:
+                    network_info.append(f"  IPv6: {addr.address}")
+
+        # Estadísticas de red
+        net_io = psutil.net_io_counters()
+        network_info.extend([
+            "\nEstadísticas de red:",
+            f"  Bytes enviados: {net_io.bytes_sent:,}",
+            f"  Bytes recibidos: {net_io.bytes_recv:,}",
+            f"  Paquetes enviados: {net_io.packets_sent:,}",
+            f"  Paquetes recibidos: {net_io.packets_recv:,}"
+        ])
+
+        return "\n".join(network_info)
+    except Exception as e:
+        return f"Error obteniendo información de red: {e}"
+
+
+def get_services() -> str:
+    """Obtiene información detallada de servicios."""
+    try:
+        if platform.system() == "Windows":
+            success, output = execute_command("sc query")
+            if success:
+                return output
+        else:
+            success, output = execute_command("systemctl list-units --type=service")
+            if success:
+                return output
+        return "No se pudo obtener información de servicios"
+    except Exception as e:
+        return f"Error obteniendo servicios: {e}"
+
+
+def get_system_info() -> str:
+    """Obtiene información general del sistema."""
+    try:
+        # CPU
+        cpu_info = [
+            "Información de CPU:",
+            f"  Núcleos físicos: {psutil.cpu_count(logical=False)}",
+            f"  Núcleos totales: {psutil.cpu_count()}",
+            f"  Uso actual: {psutil.cpu_percent()}%"
+        ]
+
+        # Memoria
+        mem = psutil.virtual_memory()
+        mem_info = [
+            "\nMemoria RAM:",
+            f"  Total: {mem.total / (1024 ** 3):.1f} GB",
+            f"  Disponible: {mem.available / (1024 ** 3):.1f} GB",
+            f"  Usada: {mem.used / (1024 ** 3):.1f} GB",
+            f"  Porcentaje: {mem.percent}%"
+        ]
+
+        # Tiempo de actividad
+        uptime = datetime.datetime.now() - datetime.datetime.fromtimestamp(psutil.boot_time())
+
+        return "\n".join(cpu_info + mem_info + [f"\nTiempo de actividad: {uptime}"])
+    except Exception as e:
+        return f"Error obteniendo información del sistema: {e}"
+
+
+def execute_shell(command: str) -> str:
+    """
+    Ejecuta un comando en la shell del sistema.
+
+    Args:
+        command: Comando a ejecutar
+    """
+    try:
+        success, output = execute_command(command)
+        if success:
+            return output
+        return f"Error ejecutando comando: {output}"
+    except Exception as e:
+        return f"Error en shell: {e}"
+
+
+def get_environment() -> str:
+    """Obtiene las variables de entorno."""
+    try:
+        env_vars = []
+        for key, value in os.environ.items():
+            env_vars.append(f"{key}={value}")
+        return "\n".join(sorted(env_vars))
+    except Exception as e:
+        return f"Error obteniendo variables de entorno: {e}"
+
+
+def get_installed_software() -> str:
+    """Obtiene el software instalado."""
+    try:
+        if platform.system() == "Windows":
+            success, output = execute_command('wmic product get name,version')
+            if success:
+                return output
+        else:
+            success, output = execute_command('dpkg -l' if os.path.exists('/usr/bin/dpkg') else 'rpm -qa')
+            if success:
+                return output
+        return "No se pudo obtener la lista de software instalado"
+    except Exception as e:
+        return f"Error obteniendo software instalado: {e}"
+
+
+def get_network_connections() -> str:
+    """Obtiene las conexiones de red activas."""
+    try:
+        connections = []
+        for conn in psutil.net_connections(kind='inet'):
+            try:
+                process = psutil.Process(conn.pid) if conn.pid else None
+                local = f"{conn.laddr.ip}:{conn.laddr.port}"
+                remote = f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else "-"
+                connections.append(
+                    f"PID: {conn.pid or '-':<6} "
+                    f"Proceso: {process.name() if process else '-':<15} "
+                    f"Local: {local:<21} "
+                    f"Remoto: {remote:<21} "
+                    f"Estado: {conn.status}"
+                )
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return "\n".join(connections)
+    except Exception as e:
+        return f"Error obteniendo conexiones de red: {e}"
+
+
+def kill_process(pid: int) -> str:
+    """
+    Mata un proceso por su PID.
+
+    Args:
+        pid: ID del proceso a matar
+    """
+    try:
+        process = psutil.Process(pid)
+        process.kill()
+        return f"Proceso {pid} terminado exitosamente"
+    except psutil.NoSuchProcess:
+        return f"No existe el proceso {pid}"
+    except psutil.AccessDenied:
+        return f"Acceso denegado al intentar terminar el proceso {pid}"
+    except Exception as e:
+        return f"Error terminando proceso {pid}: {e}"
