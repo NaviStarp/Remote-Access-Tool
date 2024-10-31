@@ -28,11 +28,11 @@ class Client:
             "services": f.get_services,
             "kill": f.kill_process,
             "shell": f.execute_shell,
-            "exit": self.close,
             "system_info": f.get_system_info,
             "environment": f.get_environment,
             "installed_software": f.get_installed_software,
-            "network_connections": f.get_network_connections
+            "network_connections": f.get_network_connections,
+            "Close connection": self.close
         }
 
         self.client_socket = None
@@ -103,11 +103,11 @@ class Client:
         self.colors['status_error'] = 4
         self.colors['help'] = 5
 
-        curses.init_pair(1, curses.COLOR_BLUE, -1)
-        curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_CYAN)
-        curses.init_pair(3, curses.COLOR_GREEN, -1)
-        curses.init_pair(4, curses.COLOR_RED, -1)
-        curses.init_pair(5, curses.COLOR_YELLOW, -1)
+        curses.init_pair(1, curses.COLOR_BLUE, -1)  # Título
+        curses.init_pair(2, curses.COLOR_BLUE, -1)  # Selección
+        curses.init_pair(3, curses.COLOR_GREEN, -1)  # Bordes (estado activo)
+        curses.init_pair(4, curses.COLOR_RED, -1)  # Estado inactivo
+        curses.init_pair(5, curses.COLOR_YELLOW, -1)  # Estado de ayuda o aviso
 
     def connect(self, ip, port):
         """Conecta al servidor."""

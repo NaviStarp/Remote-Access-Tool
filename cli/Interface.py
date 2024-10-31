@@ -1,13 +1,235 @@
 import curses
 import socket
+from typing import Tuple
 
 from client import Client
 
+def init_colors():
+    """Inicializa los pares de colores para la interfaz"""
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_BLUE, -1)  # Título
+    curses.init_pair(2, curses.COLOR_BLUE, -1)  # Selección
+    curses.init_pair(3, curses.COLOR_GREEN, -1)  # Bordes (estado activo)
+    curses.init_pair(4, curses.COLOR_RED, -1)  # Estado inactivo
+    curses.init_pair(5, curses.COLOR_YELLOW, -1)  # Estado de ayuda o aviso
+
+def draw_box(stdscr, start_y: int, start_x: int, height: int, width: int):
+    """Dibuja un borde decorativo alrededor de un área, evitando los límites de la pantalla"""
+    max_y, max_x = stdscr.getmaxyx()
+
+    # Ajustar dimensiones para evitar escribir en los bordes
+    if start_y + height >= max_y:
+        height = max_y - start_y - 1
+    if start_x + width >= max_x:
+        width = max_x - start_x - 1
+
+    # Caracteres para los bordes
+    topleft, topright = '╔', '╗'
+    bottomleft, bottomright = '╚', '╝'
+    horizontal, vertical = '═', '║'
+
+    try:
+        # Dibujar esquinas
+        stdscr.attron(curses.color_pair(3))
+        if start_y >= 0 and start_x >= 0:
+            stdscr.addch(start_y, start_x, topleft)
+        if start_y >= 0 and start_x + width < max_x:
+            stdscr.addch(start_y, start_x + width, topright)
+        if start_y + height < max_y and start_x >= 0:
+            stdscr.addch(start_y + height, start_x, bottomleft)
+        if start_y + height < max_y and start_x + width < max_x:
+            stdscr.addch(start_y + height, start_x + width, bottomright)
+
+        # Dibujar bordes horizontales
+        for x in range(start_x + 1, start_x + width):
+            if x < max_x:
+                if start_y >= 0:
+                    stdscr.addch(start_y, x, horizontal)
+                if start_y + height < max_y:
+                    stdscr.addch(start_y + height, x, horizontal)
+
+        # Dibujar bordes verticales
+        for y in range(start_y + 1, start_y + height):
+            if y < max_y:
+                if start_x >= 0:
+                    stdscr.addch(y, start_x, vertical)
+                if start_x + width < max_x:
+                    stdscr.addch(y, start_x + width, vertical)
+        stdscr.attroff(curses.color_pair(3))
+    except curses.error:
+        pass  # Ignorar errores si intentamos escribir fuera de los límites
+
+def show_connections(stdscr, server):
+    """Muestra la lista de conexiones con una interfaz mejorada"""
+    curses.curs_set(0)  # Ocultar cursor
+    init_colors()
+    connected_clients = [Client("127.0.0.1", server.port) for _ in range(10)]
+    total_connections = len(connected_clients)
+    current_row, current_column = 0, 0
+    page_size = 9
+    current_page = 0
+    total_pages = (total_connections + page_size - 1) // page_size
+
+    while True:
+        max_y, max_x = stdscr.getmaxyx()
+        stdscr.clear()
+
+        # Dibujar borde principal
+        draw_box(stdscr, 0, 0, max_y - 1, max_x - 1)
+
+        # Título con fondo azul
+        title = " Conexiones Activas "
+        title_x = min(max(0, (max_x // 2 - len(title) // 2)), max_x - len(title))
+        if title_x + len(title) < max_x and 1 < max_y:
+            stdscr.attron(curses.color_pair(1))
+            stdscr.addstr(1, title_x, title)
+            stdscr.attroff(curses.color_pair(1))
+
+        # Mostrar clientes en la página actual
+        start_index = current_page * page_size
+        for idx in range(page_size):
+            actual_index = start_index + idx
+            row = idx // 3
+            column = idx % 3
+            y, x = get_display_position(stdscr, row, column)
+
+            if y >= max_y - 3 or x >= max_x - 2:
+                continue
+
+            client_box_width = min(25, max_x - x - 2)
+            client_box_height = 3
+            if y + client_box_height < max_y - 2 and x + client_box_width < max_x - 2:
+                draw_box(stdscr, y - 1, x - 1, client_box_height, client_box_width)
+
+                if actual_index < total_connections:
+                    client = connected_clients[actual_index]
+                    name = client.execute_command(command='hostname', stdscr=stdscr)
+                    ip = (client.client_socket.getsockname()[0]
+                          if isinstance(client.client_socket, socket.socket)
+                          else client.client_socket)
+
+                    status_color = curses.color_pair(4) if isinstance(client.client_socket,
+                                                                      socket.socket) else curses.color_pair(5)
+                    status_symbol = "●" if isinstance(client.client_socket, socket.socket) else "○"
+                    try:
+                        stdscr.attron(status_color)
+                        stdscr.addch(y - 1, x + client_box_width - 3, status_symbol)
+                        stdscr.attroff(status_color)
+                    except curses.error:
+                        pass
+
+                    display_text = f"{actual_index + 1}. {name[:12]}"
+                    ip_text = f"({ip})"
+
+                    try:
+                        if current_row == row and current_column == column:
+                            stdscr.attron(curses.color_pair(2))
+                        if y < max_y and x + len(display_text) < max_x:
+                            stdscr.addstr(y, x, display_text)
+                        if y + 1 < max_y and x + len(ip_text) < max_x:
+                            stdscr.addstr(y + 1, x, ip_text)
+                        if current_row == row and current_column == column:
+                            stdscr.attroff(curses.color_pair(2))
+                    except curses.error:
+                        pass
+                else:
+                    try:
+                        if current_row == row and current_column == column:
+                            stdscr.attron(curses.color_pair(2))
+                        if y < max_y and x + 5 < max_x:
+                            stdscr.addstr(y, x, "Vacío")
+                        if current_row == row and current_column == column:
+                            stdscr.attroff(curses.color_pair(2))
+                    except curses.error:
+                        pass
+
+        status_bar = f" Página {current_page + 1}/{total_pages} | ↑↓←→: Navegar | Enter: Seleccionar | Q: Salir "
+        if max_y - 2 >= 0:
+            try:
+                stdscr.attron(curses.color_pair(1))
+                stdscr.addstr(max_y - 2, 1, status_bar[:max_x - 3])
+                stdscr.attroff(curses.color_pair(1))
+            except curses.error:
+                pass
+
+        stdscr.refresh()
+        result = navigate_client_list(stdscr, connected_clients, page_size,
+                                      current_row, current_column, current_page, total_pages)
+        if result == "quit":
+            break
+        elif isinstance(result, tuple):
+            current_row, current_column, current_page = result
+        elif isinstance(result, Client):
+            result.display_commands(stdscr)
+
+def get_display_position(stdscr, row: int, column: int) -> Tuple[int, int]:
+    """Calcula la posición de cada cliente con espaciado mejorado y límites seguros"""
+    max_y, max_x = stdscr.getmaxyx()
+    base_y = max(2, min(max_y // 2 - 4, max_y - 8))
+    y = base_y + row * 4
+
+    available_width = max_x - 4
+    total_width = min(90, available_width)
+    column_width = total_width // 3
+
+    base_x = max(2, min(max_x // 2 - total_width // 2, max_x - total_width - 2))
+    x = base_x + column * column_width
+
+    return y, x
+
+def show_client_details(stdscr, client: Client):
+    """Muestra los detalles del cliente seleccionado en una ventana emergente"""
+    max_y, max_x = stdscr.getmaxyx()
+    height, width = min(10, max_y - 4), min(50, max_x - 4)
+    start_y = max(1, min(max_y // 2 - height // 2, max_y - height - 2))
+    start_x = max(1, min(max_x // 2 - width // 2, max_x - width - 2))
+
+    for y in range(start_y, min(start_y + height, max_y - 1)):
+        try:
+            stdscr.addstr(y, start_x, " " * min(width, max_x - start_x - 1))
+        except curses.error:
+            pass
+
+    draw_box(stdscr, start_y, start_x, height, width)
+    # Título
+    title = " Detalles del Cliente "
+    if start_y < max_y - 1:
+        try:
+            stdscr.attron(curses.color_pair(2))
+            stdscr.addstr(start_y, start_x + (width - len(title)) // 2, title[:width - 2])
+            stdscr.attroff(curses.color_pair(2))
+        except curses.error:
+            pass
+
+    # Mostrar información
+    hostname = client.execute_command(command='hostname', stdscr=stdscr)
+    ip = (client.client_socket.getsockname()[0]
+          if isinstance(client.client_socket, socket.socket)
+          else client.client_socket)
+
+    info_lines = [
+        f"Hostname: {hostname}",
+        f"IP: {ip}",
+        f"Estado: {'Conectado' if isinstance(client.client_socket, socket.socket) else 'Desconectado'}",
+        "",
+        "Presione cualquier tecla para volver..."
+    ]
+
+    for i, line in enumerate(info_lines):
+        if start_y + 2 + i < max_y - 1:
+            try:
+                stdscr.addstr(start_y + 2 + i, start_x + 2, line[:width - 4])
+            except curses.error:
+                pass
+
+    stdscr.refresh()
+    stdscr.getch()
 
 def create_executable(stdscr):
     curses.curs_set(1)  # Mostrar el cursor
     stdscr.clear()
-
+    init_colors()
     # Variables para las selecciones
     persistence_option = False
     platforms = ["Windows", "Linux", "macOS"]
@@ -16,10 +238,6 @@ def create_executable(stdscr):
     port = ""
     current_option = 0  # Opción actual seleccionada
 
-    # Colores adicionales para mejorar la interfaz
-    curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)  # Para opciones activas
-    curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLUE)   # Para el campo seleccionado
-    curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK) # Para instrucciones
 
     while True:
         stdscr.clear()
@@ -135,80 +353,6 @@ def create_executable(stdscr):
                 port = port[:-1]
 
     curses.curs_set(0)
-
-
-def show_connections(stdscr, server):
-    connected_clients =  [Client("127.0.0.1", server.port) for _ in range(10)]
-    total_connections = len(connected_clients)
-    current_row = 0
-    current_column = 0
-    page_size = 9  # Mostramos 3 filas por columna (3 columnas x 3 filas)
-    current_page = 0
-    total_pages = (total_connections + page_size - 1) // page_size
-
-    while True:
-        stdscr.clear()
-
-        # Centrando el título
-        title = "Conexiones activas:"
-        title_x = stdscr.getmaxyx()[1] // 2 - len(title) // 2
-        show_message(stdscr, title, 1, title_x)
-
-        # Mostrar clientes en la página actual
-        start_index = current_page * page_size
-        for idx in range(page_size):
-            actual_index = start_index + idx
-            if actual_index < total_connections:
-                name = connected_clients[actual_index].execute_command(command='hostname',stdscr=stdscr)
-                ip = connected_clients[actual_index].client_socket.getsockname()[0] if isinstance(
-                    connected_clients[actual_index].client_socket, socket.socket) else connected_clients[actual_index].client_socket
-
-                # Calcular posición para cada cliente en filas y columnas
-                row = idx // 3  # Filas por cada página
-                column = idx % 3  # Columnas por cada página
-                y, x = get_display_position(stdscr, row, column)
-                display_text = f"{actual_index + 1}. {name} ({ip})"
-                show_client_row(stdscr, y, x, display_text, current_row == row and current_column == column)
-            else:
-                row = idx // 3  # Filas por cada página
-                column = idx % 3  # Columnas por cada página
-                y, x = get_display_position(stdscr, row, column)
-                display_text = "Vacio"
-                show_client_row(stdscr, y, x, display_text, current_row == row and current_column == column)
-        # Información de paginación centrada
-        pagination_info = f"Página {current_page + 1} de {total_pages}"
-        pagination_x = stdscr.getmaxyx()[1] // 2 - len(pagination_info) // 2
-        show_message(stdscr, pagination_info, stdscr.getmaxyx()[0] - 2, pagination_x)
-
-        stdscr.refresh()
-
-        # Navegación
-        result = navigate_client_list(stdscr, connected_clients, page_size, current_row, current_column, current_page, total_pages)
-        if result == "quit":
-            break
-        elif isinstance(result, tuple):
-            current_row, current_column, current_page = result
-        else:
-            selected_client: Client = result
-            if selected_client and isinstance(selected_client, Client):
-                stdscr.clear()
-                show_message(stdscr, f"Cliente seleccionado: {selected_client}", 0, 0)
-                selected_client.display_commands(stdscr)
-                stdscr.refresh()
-                stdscr.getch()
-
-
-def get_display_position(stdscr, row, column):
-    """Calcula la posición de cada cliente en una fila y columna específica, con tres columnas centradas."""
-    y = stdscr.getmaxyx()[0] // 2 - 5 + row * 2  # Centrado verticalmente
-    x_positions = [
-        stdscr.getmaxyx()[1] // 2 - 30,  # Columna izquierda
-        stdscr.getmaxyx()[1] // 2 - 5,   # Columna central
-        stdscr.getmaxyx()[1] // 2 + 20   # Columna derecha
-    ]
-    x = x_positions[column]
-    return y, x
-
 
 
 def show_message(stdscr, message, y, x):
