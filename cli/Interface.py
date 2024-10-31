@@ -4,6 +4,7 @@ from typing import Tuple
 
 from client import Client
 
+
 def init_colors():
     """Inicializa los pares de colores para la interfaz"""
     curses.start_color()
@@ -13,6 +14,7 @@ def init_colors():
     curses.init_pair(3, curses.COLOR_GREEN, -1)  # Bordes (estado activo)
     curses.init_pair(4, curses.COLOR_RED, -1)  # Estado inactivo
     curses.init_pair(5, curses.COLOR_YELLOW, -1)  # Estado de ayuda o aviso
+
 
 def draw_box(stdscr, start_y: int, start_x: int, height: int, width: int):
     """Dibuja un borde decorativo alrededor de un área, evitando los límites de la pantalla"""
@@ -60,11 +62,13 @@ def draw_box(stdscr, start_y: int, start_x: int, height: int, width: int):
     except curses.error:
         pass  # Ignorar errores si intentamos escribir fuera de los límites
 
+
 def show_connections(stdscr, server):
     """Muestra la lista de conexiones con una interfaz mejorada"""
     curses.curs_set(0)  # Ocultar cursor
     init_colors()
-    connected_clients = [Client("127.0.0.1", server.port) for _ in range(10)]
+    connected_clients = server.connected_clients
+    # connected_clients = [Client('127.0.0.1',8080) for i in range(100)]
     total_connections = len(connected_clients)
     current_row, current_column = 0, 0
     page_size = 9
@@ -163,6 +167,8 @@ def show_connections(stdscr, server):
         elif isinstance(result, Client):
             result.display_commands(stdscr)
 
+
+
 def get_display_position(stdscr, row: int, column: int) -> Tuple[int, int]:
     """Calcula la posición de cada cliente con espaciado mejorado y límites seguros"""
     max_y, max_x = stdscr.getmaxyx()
@@ -177,6 +183,7 @@ def get_display_position(stdscr, row: int, column: int) -> Tuple[int, int]:
     x = base_x + column * column_width
 
     return y, x
+
 
 def show_client_details(stdscr, client: Client):
     """Muestra los detalles del cliente seleccionado en una ventana emergente"""
@@ -226,6 +233,7 @@ def show_client_details(stdscr, client: Client):
     stdscr.refresh()
     stdscr.getch()
 
+
 def create_executable(stdscr):
     curses.curs_set(1)  # Mostrar el cursor
     stdscr.clear()
@@ -237,7 +245,6 @@ def create_executable(stdscr):
     host = ""
     port = ""
     current_option = 0  # Opción actual seleccionada
-
 
     while True:
         stdscr.clear()
@@ -258,10 +265,10 @@ def create_executable(stdscr):
         stdscr.addstr(start_y + 2, start_x + 2, field_text)
         if current_option == 0:
             stdscr.addstr(start_y + 2, start_x + len(field_text) + 3, "Sí" if persistence_option else "No",
-                         curses.color_pair(3) | curses.A_BOLD)
+                          curses.color_pair(3) | curses.A_BOLD)
         else:
             stdscr.addstr(start_y + 2, start_x + len(field_text) + 3, "Sí" if persistence_option else "No",
-                         curses.color_pair(2))
+                          curses.color_pair(2))
 
         # 2. Selector de plataforma
         stdscr.addstr(start_y + 4, start_x + 2, "Plataforma:")
@@ -269,39 +276,39 @@ def create_executable(stdscr):
         for idx, platform in enumerate(platforms):
             if current_option == 1 and idx == current_platform:
                 stdscr.addstr(start_y + 4, platform_x + idx * 12, f"[{platform}]",
-                            curses.color_pair(3) | curses.A_BOLD)
+                              curses.color_pair(3) | curses.A_BOLD)
             else:
                 stdscr.addstr(start_y + 4, platform_x + idx * 12, f" {platform} ",
-                            curses.color_pair(2) if idx == current_platform else curses.A_NORMAL)
+                              curses.color_pair(2) if idx == current_platform else curses.A_NORMAL)
 
         # 3. Campo de host
         field_text = "Host:"
         stdscr.addstr(start_y + 6, start_x + 2, field_text)
         if current_option == 2:
             stdscr.addstr(start_y + 6, start_x + len(field_text) + 3, f"[{host}]",
-                         curses.color_pair(3) | curses.A_BOLD)
+                          curses.color_pair(3) | curses.A_BOLD)
         else:
             stdscr.addstr(start_y + 6, start_x + len(field_text) + 3, host,
-                         curses.color_pair(2))
+                          curses.color_pair(2))
 
         # 4. Campo de puerto
         field_text = "Puerto:"
         stdscr.addstr(start_y + 8, start_x + 2, field_text)
         if current_option == 3:
             stdscr.addstr(start_y + 8, start_x + len(field_text) + 3, f"[{port}]",
-                         curses.color_pair(3) | curses.A_BOLD)
+                          curses.color_pair(3) | curses.A_BOLD)
         else:
             stdscr.addstr(start_y + 8, start_x + len(field_text) + 3, port,
-                         curses.color_pair(2))
+                          curses.color_pair(2))
 
         # Botón de confirmación
         button_text = "[ Confirmar ]"
         if current_option == 4:
             stdscr.addstr(start_y + 11, width // 2 - len(button_text) // 2, button_text,
-                         curses.color_pair(3) | curses.A_BOLD)
+                          curses.color_pair(3) | curses.A_BOLD)
         else:
             stdscr.addstr(start_y + 11, width // 2 - len(button_text) // 2, button_text,
-                         curses.color_pair(2))
+                          curses.color_pair(2))
 
         # Campo activo actual
         active_field = ["Persistencia", "Plataforma", "Host", "Puerto", "Confirmar"][current_option]
@@ -332,14 +339,14 @@ def create_executable(stdscr):
             if current_option == 4:  # Botón confirmar
                 if host and port:  # Validación básica
                     stdscr.addstr(start_y + 12, start_x + 2, "✓ Ejecutable creado con éxito!",
-                                curses.color_pair(2) | curses.A_BOLD)
+                                  curses.color_pair(2) | curses.A_BOLD)
                     stdscr.refresh()
                     curses.napms(1500)
                     break
                 else:
                     error_msg = "⚠ Error: Host y Puerto son requeridos"
                     stdscr.addstr(start_y + 12, start_x + 2, error_msg,
-                                curses.color_pair(1) | curses.A_BOLD)
+                                  curses.color_pair(1) | curses.A_BOLD)
                     stdscr.refresh()
                     curses.napms(1500)
         elif current_option == 2 and (32 <= key <= 126):  # Host
@@ -369,9 +376,6 @@ def show_client_row(stdscr, y, x, display_text, highlighted):
         stdscr.addstr(y, x, display_text)
 
 
-
-
-
 def navigate_client_list(stdscr, connected_clients, page_size, current_row, current_column, current_page, total_pages):
     total_connections = len(connected_clients)
     key = stdscr.getch()
@@ -391,11 +395,12 @@ def navigate_client_list(stdscr, connected_clients, page_size, current_row, curr
             current_row = 2
 
     elif key == curses.KEY_RIGHT:
-        if current_column < 2 and (current_page * page_size + current_row * 3 + (current_column + 1)) < total_connections:
+        if current_column < 2 and (
+                current_page * page_size + current_row * 3 + (current_column + 1)) < total_connections:
             current_column += 1
         elif current_page < total_pages - 1:
-                current_page += 1
-                current_row, current_column = 0, 0
+            current_page += 1
+            current_row, current_column = 0, 0
 
     elif key == curses.KEY_LEFT:
         if current_column > 0:
@@ -421,6 +426,7 @@ def select_client(connected_clients, current_row, current_column, current_page, 
     if selected_index < len(connected_clients):
         return connected_clients[selected_index]
     return None
+
 
 # Funciones para inicializar y mostrar los menús
 def show_logo(stdscr, logo):
