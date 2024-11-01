@@ -608,7 +608,7 @@ def init(persistence: bool = True, server_host: str = '127.0.0.1', server_port: 
     client_setup = ClientSetup(__file__)
     
     # Verificar si ya hay una instalacion existente
-    if client_setup.detect_existing_installation().get('installed'):
+    if client_setup.detect_existing_installation().get('installed') or persistence == False: 
         print("Instalacion existente detectada.")
     else:
         print("No se detecto instalacion. Procediendo a la instalacion...")
