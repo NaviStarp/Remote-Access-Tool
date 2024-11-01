@@ -90,12 +90,13 @@ class Server:
 
     def stop(self):
         self.running = False
-
+        self.connected_clients = []
         if self.server:
             try:
                 self.server.shutdown(socket.SHUT_RDWR)
                 self.server.close()
-            except:
+            except Exception as e:
+                print(f"Error al detener el servidor: {e}")
                 pass
             print("[-] Servidor detenido.")
 

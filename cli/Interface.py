@@ -77,6 +77,7 @@ def draw_box(stdscr, start_y: int, start_x: int, height: int, width: int):
 
 def show_connections(stdscr, server):
     """Muestra la lista de conexiones con una interfaz mejorada"""
+    stdscr.clear()
     curses.curs_set(0)  # Ocultar cursor
     init_colors()
     connected_clients = server.connected_clients
@@ -185,11 +186,9 @@ def show_connections(stdscr, server):
 
                 # Llamar a display_commands en un nuevo contexto
                 try:
-                    curses.reset_shell_mode()
 
-                    start_client_cli(client)
+                    start_client_cli(stdscr,client)
                 finally:
-                    curses.reset_prog_mode()
                     stdscr.clear()
                     stdscr.refresh()
         except Exception as e:

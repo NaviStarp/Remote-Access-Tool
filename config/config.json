@@ -1,6 +1,6 @@
 {
     "persistence": true,
-    "platform": "Linux",
-    "host": "localhost",
+    "platform": "Windows",
+    "host": "25.53.158.40",
     "port": 8080
 }

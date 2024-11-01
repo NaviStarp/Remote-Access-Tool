@@ -1,6 +1,5 @@
-cryptography~=43.0.0
 windows-curses
-pyautogui
-pillow
-opencv-python
-requests
+pyinstaller
+psutil
+browser_history
+winreg

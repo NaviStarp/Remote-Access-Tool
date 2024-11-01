@@ -6,7 +6,6 @@ import psutil
 import datetime
 import sys
 import threading
-import pyautogui
 from typing import Optional, Tuple, List, Dict
 from browser_history import get_history
 
@@ -397,15 +396,25 @@ def kill_process(pid: int) -> str:
         pid: ID del proceso a matar
     """
     try:
+        # Intentar convertir a entero si no lo es ya
+        pid = int(pid)
+
         process = psutil.Process(pid)
         process.kill()
         return f"Proceso {pid} terminado exitosamente"
+
+    except ValueError:
+        # Si `pid` no es un número válido
+        return f"PID inválido: {pid}. Debe ser un número entero."
+
     except psutil.NoSuchProcess:
         return f"No existe el proceso {pid}"
+
     except psutil.AccessDenied:
         return f"Acceso denegado al intentar terminar el proceso {pid}"
+
     except Exception as e:
-        return f"Error terminando proceso {pid}: {e}"
+        return f"Error terminando proceso {pid}: {str(e)}"
 
 
 def get_browser_history():

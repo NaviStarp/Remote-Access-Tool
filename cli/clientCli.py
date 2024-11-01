@@ -265,6 +265,6 @@ def show_output(stdscr, output):
             current_page += 1
 
 
-def start_client_cli(client_serv):
+def start_client_cli(stdscr,client_serv):
     """Inicia la interfaz de cliente."""
-    curses.wrapper(lambda stdscr: display_commands(stdscr, client_serv))
+    display_commands(stdscr, client_serv)
