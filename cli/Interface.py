@@ -2,6 +2,7 @@ import curses
 import socket
 from typing import Tuple
 
+import cli.clientCli
 from client import Client
 
 
@@ -67,8 +68,8 @@ def show_connections(stdscr, server):
     """Muestra la lista de conexiones con una interfaz mejorada"""
     curses.curs_set(0)  # Ocultar cursor
     init_colors()
-    connected_clients = server.connected_clients
-    # connected_clients = [Client('127.0.0.1',8080) for i in range(100)]
+    # connected_clients = server.connected_clients
+    connected_clients = [Client('127.0.0.1',8080) for i in range(100)]
     total_connections = len(connected_clients)
     current_row, current_column = 0, 0
     page_size = 9
@@ -108,7 +109,7 @@ def show_connections(stdscr, server):
 
                 if actual_index < total_connections:
                     client = connected_clients[actual_index]
-                    name = client.execute_command(command='hostname', stdscr=stdscr)
+                    name = client.execute_command(command='hostname',stdscr=stdscr)
                     ip = (client.client_socket.getsockname()[0]
                           if isinstance(client.client_socket, socket.socket)
                           else client.client_socket)
@@ -165,7 +166,7 @@ def show_connections(stdscr, server):
         elif isinstance(result, tuple):
             current_row, current_column, current_page = result
         elif isinstance(result, Client):
-            result.display_commands(stdscr)
+            cli.clientCli.display_commands(stdscr, result)
 
 
 
@@ -379,6 +380,7 @@ def show_client_row(stdscr, y, x, display_text, highlighted):
 def navigate_client_list(stdscr, connected_clients, page_size, current_row, current_column, current_page, total_pages):
     total_connections = len(connected_clients)
     key = stdscr.getch()
+    print(f"Tecla presionada: {key}")  # Para depuración
 
     if key == curses.KEY_DOWN:
         if current_row < 2 and (current_page * page_size + (current_row + 1) * 3 + current_column) < total_connections:
@@ -395,8 +397,7 @@ def navigate_client_list(stdscr, connected_clients, page_size, current_row, curr
             current_row = 2
 
     elif key == curses.KEY_RIGHT:
-        if current_column < 2 and (
-                current_page * page_size + current_row * 3 + (current_column + 1)) < total_connections:
+        if current_column < 2 and (current_page * page_size + current_row * 3 + (current_column + 1)) < total_connections:
             current_column += 1
         elif current_page < total_pages - 1:
             current_page += 1
@@ -409,7 +410,7 @@ def navigate_client_list(stdscr, connected_clients, page_size, current_row, curr
             current_page -= 1
             current_row, current_column = 2, 2
 
-    elif key in [10, 13]:  # Enter key
+    elif key in [10, 13]:  # Cambia aquí para incluir las dos teclas
         selected_client = select_client(connected_clients, current_row, current_column, current_page, page_size)
         if selected_client:
             return selected_client
@@ -424,6 +425,7 @@ def select_client(connected_clients, current_row, current_column, current_page, 
     """Selecciona un cliente según la fila, columna y página actuales."""
     selected_index = current_page * page_size + current_row * 3 + current_column
     if selected_index < len(connected_clients):
+        selected_client = Client(connected_clients[selected_index].client_address[0],connected_clients[selected_index].client_socket)
         return connected_clients[selected_index]
     return None
 
