@@ -5,10 +5,12 @@ from client.setup import ClientSetup
 
 
 class Client:
-    def __init__(self, host=None, port=None,client_socket=None):
+    def __init__(self, host=None, port=None, client_socket=None):
         self.host = host
         self.port = port
         self.setup = ClientSetup(__name__)
+        self.client_socket = client_socket
+        self.status_message = ""
 
         # Define command arguments and corresponding prompts
         self.command_args = {
@@ -42,36 +44,80 @@ class Client:
             "Uninstall tool": self.setup.uninstall,
         }
 
-        self.client_socket = None
-        self.status_message = ""
-        self.colors = {}
-
-    def send_command(self, command):
-        """Sends the command result back to the server."""
+    def listen_for_commands(self):
         try:
-            self.client_socket.sendall(command.encode('utf-8'))
-            Result = self.client_socket.recv(4096).decode('utf-8')
-            return Result
+            print("[+] Escuchando comandos...")
+            while True:
+                # Recibir longitud del comando
+                length_data = self.client_socket.recv(4)
+                if not length_data:
+                    break
+
+                length = int.from_bytes(length_data, 'big')
+
+                # Recibir comando completo
+                command_data = b''
+                while len(command_data) < length:
+                    chunk = self.client_socket.recv(min(4096, length - len(command_data)))
+                    if not chunk:
+                        break
+                    command_data += chunk
+
+                if command_data:
+                    command = pickle.loads(command_data)
+                    print(f"Comando recibido: {command}")
+
+                    # Ejecutar comando y obtener respuesta
+                    response = self.execute_command(command)
+
+                    # Serializar y enviar la respuesta
+                    response_data = pickle.dumps(response)
+                    # Enviar longitud primero
+                    self.client_socket.sendall(len(response_data).to_bytes(4, 'big'))
+                    # Enviar datos
+                    self.client_socket.sendall(response_data)
+                else:
+                    break
+
         except Exception as e:
-            self.status_message = f"[!] Error sending result to server: {e}"
-            return None
+            print(f"Error al recibir comando: {e}")
+        finally:
+            self.client_socket.close()
 
     def connect(self):
-        """Connects to the server."""
         try:
             self.client_socket = socket.create_connection((self.host, self.port))
-            self.client_socket.sendall(pickle.dumps({"status": "connected"}))  # Test message
+
+            # Enviar mensaje inicial
+            initial_data = pickle.dumps({"status": "connected"})
+            self.client_socket.sendall(len(initial_data).to_bytes(4, 'big'))
+            self.client_socket.sendall(initial_data)
+
             self.status_message = "[+] Connected to the server."
+            print(self.status_message)
+            self.listen_for_commands()
             return True
         except Exception as e:
             self.status_message = f"[!] Error connecting to the server: {e}"
             return False
 
     def close(self):
-        """Closes the client's connection."""
         if self.client_socket:
-            self.client_socket.close()
+            try:
+                self.client_socket.close()
+            except Exception as e:
+                print(f"Error al cerrar conexión: {e}")
+                pass
             self.client_socket = None
             self.status_message = "[-] Connection closed."
 
-
+    def execute_command(self, command):
+        # Aquí puedes procesar los comandos recibidos.
+        try:
+            if command in self.commands:
+                return self.commands[command]()
+            else:
+                return f"Comando no válido: {command}"
+        except Exception as e:
+            return f"Error al ejecutar comando: {e}"
+        # Por ejemplo, podrías usar 'os' para ejecutar comandos en el sistema.

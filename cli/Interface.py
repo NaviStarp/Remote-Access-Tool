@@ -3,6 +3,7 @@ import socket
 from typing import Tuple
 
 import cli.clientCli
+from cli.clientCli import start_client_cli
 from client import Client
 
 
@@ -68,8 +69,7 @@ def show_connections(stdscr, server):
     """Muestra la lista de conexiones con una interfaz mejorada"""
     curses.curs_set(0)  # Ocultar cursor
     init_colors()
-    # connected_clients = server.connected_clients
-    connected_clients = [Client('127.0.0.1',8080) for i in range(100)]
+    connected_clients = server.connected_clients
     total_connections = len(connected_clients)
     current_row, current_column = 0, 0
     page_size = 9
@@ -108,36 +108,37 @@ def show_connections(stdscr, server):
                 draw_box(stdscr, y - 1, x - 1, client_box_height, client_box_width)
 
                 if actual_index < total_connections:
-                    client = connected_clients[actual_index]
-                    name = client.execute_command(command='hostname',stdscr=stdscr)
-                    ip = (client.client_socket.getsockname()[0]
-                          if isinstance(client.client_socket, socket.socket)
-                          else client.client_socket)
-
-                    status_color = curses.color_pair(4) if isinstance(client.client_socket,
-                                                                      socket.socket) else curses.color_pair(5)
-                    status_symbol = "●" if isinstance(client.client_socket, socket.socket) else "○"
                     try:
-                        stdscr.attron(status_color)
-                        stdscr.addch(y - 1, x + client_box_width - 3, status_symbol)
-                        stdscr.attroff(status_color)
-                    except curses.error:
-                        pass
+                        client = connected_clients[actual_index]
+                        name = client.send_command(command='hostname')
+                        ip = client.send_command(command='ip')
 
-                    display_text = f"{actual_index + 1}. {name[:12]}"
-                    ip_text = f"({ip})"
+                        status_color = curses.color_pair(4)
+                        status_symbol = "●"
+                        try:
+                            stdscr.attron(status_color)
+                            stdscr.addch(y - 1, x + client_box_width - 3, status_symbol)
+                            stdscr.attroff(status_color)
+                        except curses.error:
+                            pass
 
-                    try:
-                        if current_row == row and current_column == column:
-                            stdscr.attron(curses.color_pair(2))
-                        if y < max_y and x + len(display_text) < max_x:
-                            stdscr.addstr(y, x, display_text)
-                        if y + 1 < max_y and x + len(ip_text) < max_x:
-                            stdscr.addstr(y + 1, x, ip_text)
-                        if current_row == row and current_column == column:
-                            stdscr.attroff(curses.color_pair(2))
-                    except curses.error:
-                        pass
+                        display_text = f"{actual_index + 1}. {name[:12]}"
+                        ip_text = f"({ip})"
+
+                        try:
+                            if current_row == row and current_column == column:
+                                stdscr.attron(curses.color_pair(2))
+                            if y < max_y and x + len(display_text) < max_x:
+                                stdscr.addstr(y, x, display_text)
+                            if y + 1 < max_y and x + len(ip_text) < max_x:
+                                stdscr.addstr(y + 1, x, ip_text)
+                            if current_row == row and current_column == column:
+                                stdscr.attroff(curses.color_pair(2))
+                        except curses.error:
+                            pass
+                    except Exception as e:
+                        error_text = f"Error: {str(e)[:20]}"
+                        stdscr.addstr(y, x, error_text)
                 else:
                     try:
                         if current_row == row and current_column == column:
@@ -159,14 +160,37 @@ def show_connections(stdscr, server):
                 pass
 
         stdscr.refresh()
-        result = navigate_client_list(stdscr, connected_clients, page_size,
-                                      current_row, current_column, current_page, total_pages)
-        if result == "quit":
-            break
-        elif isinstance(result, tuple):
-            current_row, current_column, current_page = result
-        elif isinstance(result, Client):
-            cli.clientCli.display_commands(stdscr, result)
+        try:
+            result = navigate_client_list(stdscr, connected_clients, page_size,
+                                          current_row, current_column, current_page, total_pages)
+
+            if result == "quit":
+                break
+            elif isinstance(result, tuple):
+                current_row, current_column, current_page = result
+            elif result is not None:  # Cliente seleccionado
+                # Guardar el estado actual de la pantalla
+                stdscr.clear()
+                stdscr.refresh()
+
+                # Llamar a display_commands en un nuevo contexto
+                try:
+                    curses.reset_shell_mode()
+
+                    start_client_cli(client)
+                finally:
+                    curses.reset_prog_mode()
+                    stdscr.clear()
+                    stdscr.refresh()
+        except Exception as e:
+            # Mostrar error en la parte inferior de la pantalla
+            error_msg = f"Error: {str(e)}"
+            try:
+                stdscr.addstr(max_y - 1, 1, error_msg[:max_x - 3], curses.color_pair(4))
+                stdscr.refresh()
+                curses.napms(2000)  # Mostrar el error por 2 segundos
+            except curses.error:
+                pass
 
 
 
@@ -211,7 +235,7 @@ def show_client_details(stdscr, client: Client):
             pass
 
     # Mostrar información
-    hostname = client.execute_command(command='hostname', stdscr=stdscr)
+    hostname = client.execute_command(command='hostname')
     ip = (client.client_socket.getsockname()[0]
           if isinstance(client.client_socket, socket.socket)
           else client.client_socket)
@@ -425,7 +449,6 @@ def select_client(connected_clients, current_row, current_column, current_page, 
     """Selecciona un cliente según la fila, columna y página actuales."""
     selected_index = current_page * page_size + current_row * 3 + current_column
     if selected_index < len(connected_clients):
-        selected_client = Client(connected_clients[selected_index].client_address[0],connected_clients[selected_index].client_socket)
         return connected_clients[selected_index]
     return None
 

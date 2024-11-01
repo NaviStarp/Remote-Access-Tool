@@ -3,43 +3,50 @@ import socket
 import threading
 import curses
 import time
+from datetime import datetime
 
 
 class ClientServ:
-    """Clase para manejar la conexión con un cliente."""
+    def __init__(self, socket, address):
+        self.socket = socket
+        self.address = address
+        self.hostname = None
+        self.os = None
+        self.last_seen = datetime.now()
 
-    def __init__(self, client_socket, client_address):
-        self.client_socket = client_socket
-        self.client_address = client_address
-
-    def execute_command(self, command: str):
-        import subprocess
+    def send_command(self, command):
         try:
-            # Run the command using subprocess
-            result = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
-            return result.decode().strip()  # Return the output as a string
-        except subprocess.CalledProcessError as e:
-            print(f"[!] Error al ejecutar el comando: {e}")
-            return None
+            # Serializar el comando
+            data = pickle.dumps(command)
+            # Enviar primero la longitud
+            self.socket.sendall(len(data).to_bytes(4, 'big'))
+            # Enviar los datos
+            self.socket.sendall(data)
 
-    def close(self):
-        """Cierra la conexión del cliente."""
-        self.client_socket.close()
-        print(f"[-] Conexión cerrada para {self.client_address}")
+            # Recibir la longitud de la respuesta
+            response_length = int.from_bytes(self.socket.recv(4), 'big')
+            # Recibir la respuesta completa
+            response_data = b''
+            while len(response_data) < response_length:
+                chunk = self.socket.recv(min(4096, response_length - len(response_data)))
+                if not chunk:
+                    break
+                response_data += chunk
+
+            return pickle.loads(response_data)
+        except Exception as e:
+            return f"Error al enviar comando: {str(e)}"
 
 
 class Server:
-    """Clase para un servidor de escucha de conexiones."""
-
     def __init__(self, host='0.0.0.0', port=8080):
         self.server = None
         self.host = host
         self.port = port
-        self.connected_clients = []  # List of connected clients
-        self.running = False  # Control variable for the loop
+        self.connected_clients = []
+        self.running = False
 
     def start(self):
-        """Inicia el servidor."""
         try:
             self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -52,51 +59,60 @@ class Server:
                 try:
                     client_socket, client_address = self.server.accept()
                     print(f"[+] Nueva conexión desde {client_address}")
-                    client_data = client_socket.recv(4096)
 
-                    if client_data:
-                        # Deserializar los datos como un diccionario
-                        client_info = pickle.loads(client_data)
-                        print(f"[+] Datos del cliente recibidos: {client_info}")
+                    # Recibir longitud de los datos
+                    length_data = client_socket.recv(4)
+                    if length_data:
+                        length = int.from_bytes(length_data, 'big')
+                        # Recibir datos del cliente
+                        client_data = b''
+                        while len(client_data) < length:
+                            chunk = client_socket.recv(min(4096, length - len(client_data)))
+                            if not chunk:
+                                break
+                            client_data += chunk
 
-                        # Aquí puedes enviar un mensaje de respuesta al cliente, si es necesario
-                        response = {"message": "Conexión exitosa"}
-                        client_socket.sendall(pickle.dumps(response))
+                        if client_data:
+                            client_info = pickle.loads(client_data)
+                            print(f"[+] Datos del cliente recibidos: {client_info}")
 
-                        # Create and store the new client connection
-                        new_client = ClientServ(client_socket, client_address)
-                        self.connected_clients.append(new_client)
+                            # Crear y almacenar la nueva conexión
+                            new_client = ClientServ(client_socket, client_address)
+                            self.connected_clients.append(new_client)
 
                 except Exception as e:
                     print(f"[!] Error al aceptar conexión: {e}")
-                    break
+                    continue
 
         except Exception as e:
             print(f"[!] Error al iniciar el servidor: {e}")
-            self.stop()  # Detiene y limpia en caso de error
+            self.stop()
 
     def stop(self):
-        """Detiene el servidor y cierra todas las conexiones."""
         self.running = False
         for client in self.connected_clients:
-            client.close()
+            try:
+                client.socket.close()
+            except:
+                pass
         self.connected_clients = []
 
         if self.server:
-            self.server.shutdown(socket.SHUT_RDWR)
-            self.server.close()
+            try:
+                self.server.shutdown(socket.SHUT_RDWR)
+                self.server.close()
+            except:
+                pass
             print("[-] Servidor detenido.")
 
     def get_client_info(self):
-        """Obtiene la información de los clientes conectados."""
-        return [f"{client.client_address[0]}:{client.client_address[1]}" for client in self.connected_clients]
-
+        return [f"{client.address[0]}:{client.address[1]}" for client in self.connected_clients]
 
 def curses_ui(server):
     """Crea una interfaz de usuario utilizando curses para mostrar los clientes conectados."""
     stdscr = curses.initscr()
     curses.curs_set(0)  # Ocultar el cursor
-    stdscr.nodelay(1)  # No bloquear en espera de entrada
+    stdscr.nodelay(True)  # No bloquear en espera de entrada
     stdscr.clear()
 
     while server.running:

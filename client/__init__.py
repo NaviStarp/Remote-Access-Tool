@@ -18,5 +18,5 @@ def init(persistence: bool = True):
 
 if __name__ == "__main__":
     # init()
-    client1 = Client('192.168.3.182', 8080)
+    client1 = Client('192.168.1.134', 8080)
     client1.connect()
