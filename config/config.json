@@ -1,0 +1,6 @@
+{
+    "persistence": true,
+    "platform": "Linux",
+    "host": "localhost",
+    "port": 8080
+}

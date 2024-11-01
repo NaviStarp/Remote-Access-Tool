@@ -1,0 +1,6 @@
+cryptography~=43.0.0
+windows-curses
+pyautogui
+pillow
+opencv-python
+requests

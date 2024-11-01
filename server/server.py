@@ -90,12 +90,6 @@ class Server:
 
     def stop(self):
         self.running = False
-        for client in self.connected_clients:
-            try:
-                client.socket.close()
-            except:
-                pass
-        self.connected_clients = []
 
         if self.server:
             try:
@@ -108,34 +102,7 @@ class Server:
     def get_client_info(self):
         return [f"{client.address[0]}:{client.address[1]}" for client in self.connected_clients]
 
-def curses_ui(server):
-    """Crea una interfaz de usuario utilizando curses para mostrar los clientes conectados."""
-    stdscr = curses.initscr()
-    curses.curs_set(0)  # Ocultar el cursor
-    stdscr.nodelay(True)  # No bloquear en espera de entrada
-    stdscr.clear()
 
-    while server.running:
-        stdscr.clear()
-        stdscr.addstr(0, 0, "[*] Clientes conectados:", curses.A_BOLD)
-        clients_info = server.get_client_info()
-
-        if clients_info:
-            for idx, client_info in enumerate(clients_info):
-                stdscr.addstr(idx + 1, 0, client_info)
-        else:
-            stdscr.addstr(1, 0, "No hay clientes conectados.")
-
-        stdscr.addstr(len(clients_info) + 2, 0, "Presione 'q' para salir.")
-        stdscr.refresh()
-
-        # Check for quit key
-        key = stdscr.getch()
-        if key == ord('q'):
-            break
-        time.sleep(1)  # Sleep for a short period to reduce CPU usage
-
-    curses.endwin()
 
 
 if __name__ == "__main__":
@@ -145,10 +112,3 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target=server.start)
     server_thread.start()
 
-    try:
-        curses_ui(server)  # Start the curses UI
-    except KeyboardInterrupt:
-        print("\n[!] Deteniendo servidor manualmente.")
-    finally:
-        server.stop()
-        server_thread.join()  # Wait for the server thread to finish

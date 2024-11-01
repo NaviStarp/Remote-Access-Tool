@@ -14,7 +14,7 @@ def run_server(server):
 
 
 def main(stdscr):
-    parser = argparse.ArgumentParser(description="Servidor Simulado")
+    parser = argparse.ArgumentParser(description="Servidor")
     parser.add_argument('--create', action='store_true', help='Crear un ejecutable al inicio')
     parser.add_argument('--view', action='store_true', help='Ver las conexiones al inicio')
     args = parser.parse_args()
